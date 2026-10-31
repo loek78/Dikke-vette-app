@@ -5,26 +5,33 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0b0705">
 <title>Vuur-demo</title>
-<!-- Losse demopagina voor visuele QA van fire.js (niet gelinkt vanuit de app). ?solo = alleen hero + vonkjes -->
+<link rel="icon" href="icons/icon.svg">
+<!-- Losse demopagina voor visuele QA van fire.js (niet gelinkt vanuit de app).
+     ?solo = alleen de grote vlam + vonkjes (zoals in de app) · ?i=0.3 = begin-intensiteit van de grote vlam -->
 <style>
   :root { --soot: #0b0705; --char: #17100b; --ember: #ff6a1a; --flame: #ffc247; --glow: #ffe7b8; --ash: #b8a99a; }
   * { box-sizing: border-box; }
   html, body { margin: 0; background: var(--soot); color: var(--glow); font: 15px/1.4 system-ui, -apple-system, sans-serif; }
   #bg { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 0; }
-  main { position: relative; z-index: 1; max-width: 560px; margin: 0 auto; padding: 16px 16px 40px; }
-  h1 { font-size: 20px; margin: 4px 0 8px; letter-spacing: .02em; }
+  main { position: relative; z-index: 1; max-width: 560px; margin: 0 auto; padding: max(16px, env(safe-area-inset-top)) 16px 40px; }
+  h1 { font-size: 20px; margin: 4px 0 2px; letter-spacing: .02em; }
+  .sub { margin: 0 0 6px; color: var(--ash); font-size: 13px; }
   .hero canvas { display: block; width: 100%; height: 300px; }
-  .row { display: flex; gap: 10px; align-items: center; margin: 8px 0 18px; }
-  .row input { flex: 1; accent-color: var(--ember); }
-  button { font: inherit; color: #1a0d05; background: linear-gradient(#ffc247, #ff6a1a); border: 0; border-radius: 999px; padding: 10px 16px; font-weight: 700; }
+  .row { display: flex; gap: 10px; align-items: center; margin: 6px 0; }
+  .row label { width: 74px; font-size: 13px; color: var(--ash); }
+  .row input { flex: 1; min-width: 0; accent-color: var(--ember); }
+  .row output { width: 36px; font-variant-numeric: tabular-nums; }
+  button { font: inherit; font-weight: 700; color: #1a0d05; background: linear-gradient(#ffc247, #ff6a1a); border: 0; border-radius: 999px;
+    min-height: 44px; padding: 0 18px; margin: 6px 0 18px; }
   .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
   figure { margin: 0; background: rgba(255, 231, 184, .04); border: 1px solid rgba(255, 194, 71, .12); border-radius: 18px; overflow: hidden; }
   figure canvas { display: block; width: 100%; height: 190px; }
   figcaption { font-size: 12px; color: var(--ash); padding: 6px 10px 8px; }
   .small { display: flex; gap: 12px; align-items: flex-end; margin-top: 14px; }
-  .small canvas { display: block; }
-  #fps { position: fixed; right: 8px; top: 8px; z-index: 2; font: 11px/1 ui-monospace, monospace; color: var(--ash); background: rgba(0,0,0,.4); padding: 4px 6px; border-radius: 6px; }
-  body.solo .grid, body.solo .small, body.solo h2 { display: none; }
+  .small canvas { display: block; flex: none; }
+  #fps { position: fixed; right: 8px; top: max(8px, env(safe-area-inset-top)); z-index: 2; font: 11px/1 ui-monospace, monospace; color: var(--ash);
+    background: rgba(0, 0, 0, .4); padding: 4px 6px; border-radius: 6px; }
+  body.solo .grid, body.solo .small { display: none; }
 </style>
 </head>
 <body>
@@ -32,12 +39,11 @@
 <div id="fps">– fps</div>
 <main>
   <h1>🔥 Vuur-demo</h1>
+  <p class="sub">QA-pagina voor <code>fire.js</code> — niet gelinkt vanuit de app.</p>
   <section class="hero"><canvas id="hero"></canvas></section>
-  <div class="row">
-    <input id="int" type="range" min="0" max="1" step="0.01" value="0.7" aria-label="Intensiteit">
-    <span id="intv">0.70</span>
-    <button id="burst" type="button">Opflakkeren</button>
-  </div>
+  <div class="row"><label for="int">Vuur</label><input id="int" type="range" min="0" max="1" step="0.01" value="0.7"><output id="intv">0.70</output></div>
+  <div class="row"><label for="dens">Vonkjes</label><input id="dens" type="range" min="0" max="1" step="0.05" value="0.6"><output id="densv">0.60</output></div>
+  <button id="burst" type="button">Opflakkeren 🔥</button>
   <div class="grid">
     <figure><canvas data-i="0"></canvas><figcaption>0 · smeulend</figcaption></figure>
     <figure><canvas data-i="0.3"></canvas><figcaption>0.3</figcaption></figure>
@@ -54,22 +60,21 @@
 <script src="fire.js"></script>
 <script>
   "use strict";
-  const solo = /[?&]solo\b/.test(location.search);
+  const qs = new URLSearchParams(location.search), solo = qs.has("solo"), i0 = Math.min(1, Math.max(0, +(qs.get("i") ?? 0.7) || 0));
   if (solo) document.body.classList.add("solo");
-  const bg = DVFire.embers(document.getElementById("bg"), { density: 0.6 });
-  const i0 = +(new URLSearchParams(location.search).get("i") ?? 0.7);
-  const hero = DVFire.flame(document.getElementById("hero"), { intensity: i0 });
+  const $ = (id) => document.getElementById(id);
+  const bg = DVFire.embers($("bg"), { density: 0.6 });
+  const hero = DVFire.flame($("hero"), { intensity: i0 });
   const cells = solo ? [] : [...document.querySelectorAll("canvas[data-i]")].map((c) =>
     DVFire.flame(c, { intensity: +c.dataset.i, logs: !("nologs" in c.dataset) }));
-  const int = document.getElementById("int"), intv = document.getElementById("intv");
-  int.oninput = () => { hero.setIntensity(+int.value); intv.textContent = (+int.value).toFixed(2); };
-  document.getElementById("burst").onclick = () => { hero.burst(); cells.forEach((f) => f.burst()); };
-  int.value = i0; intv.textContent = i0.toFixed(2);
+  const slider = (id, out, fn) => { const el = $(id); el.oninput = () => { fn(+el.value); $(out).textContent = (+el.value).toFixed(2); }; return el; };
+  slider("int", "intv", (v) => hero.setIntensity(v)).value = i0; $("intv").textContent = i0.toFixed(2);
+  slider("dens", "densv", (v) => bg.setDensity(v));
+  $("burst").onclick = () => { hero.burst(); cells.forEach((f) => f.burst()); };
   window.demo = { bg, hero, cells };
   // eenvoudige fps-meter
-  const fpsEl = document.getElementById("fps");
   let n = 0, t0 = performance.now();
-  (function loop(t) { n++; if (t - t0 > 1000) { fpsEl.textContent = Math.round(n * 1000 / (t - t0)) + " fps"; n = 0; t0 = t; } requestAnimationFrame(loop); })(t0);
+  (function loop(t) { n++; if (t - t0 > 1000) { $("fps").textContent = Math.round(n * 1000 / (t - t0)) + " fps"; n = 0; t0 = t; } requestAnimationFrame(loop); })(t0);
 </script>
 </body>
 </html>
