@@ -232,6 +232,7 @@
     const hasWin = typeof window !== "undefined" && window && typeof window.addEventListener === "function";
 
     const subs = new Map(); // filter → Set(handler(topic, payload))
+    const last = new Map(); // topic → laatste payload (retained-achtige topics), voor late handlers op hetzelfde filter
     const reconnectCbs = new Set();
     let status = null, closed = false, presenceOn = true, connects = 0, wasHidden = false;
     let closing = null;
@@ -268,6 +269,7 @@
     client.on("close", () => { if (!closed && status === "online") setStatus("reconnecting"); });
     client.on("message", (topic, payload) => {
       if (closed) return;
+      if (topic !== T.host) last.set(topic, payload);
       for (const [filter, set] of subs) {
         if (!topicMatch(filter, topic)) continue;
         for (const fn of [...set]) { try { fn(topic, payload); } catch (e) { console.error(e); } }
@@ -292,16 +294,26 @@
 
     const subscribe = (filter, fn) => {
       let set = subs.get(filter);
-      if (!set) { set = new Set(); subs.set(filter, set); }
-      set.add(fn);
-      if (!closed) { try { client.subscribe(filter, { qos: 1 }, noop); } catch (e) { /* */ } }
       let active = true;
+      if (!set) {
+        set = new Set();
+        subs.set(filter, set);
+        if (!closed) { try { client.subscribe(filter, { qos: 1 }, noop); } catch (e) { /* */ } }
+      } else {
+        // Filter loopt al: de broker stuurt retained niet opnieuw → laatst bekende waarden afspelen
+        const replay = [...last].filter(([t]) => topicMatch(filter, t));
+        if (replay.length) Promise.resolve().then(() => {
+          for (const [t, payload] of replay) if (active && !closed) { try { fn(t, payload); } catch (e) { console.error(e); } }
+        });
+      }
+      set.add(fn);
       return () => {
         if (!active) return;
         active = false;
         set.delete(fn);
         if (set.size || subs.get(filter) !== set) return;
         subs.delete(filter);
+        for (const t of [...last.keys()]) if (topicMatch(filter, t)) last.delete(t);
         if (!closed) { try { client.unsubscribe(filter, noop); } catch (e) { /* */ } }
       };
     };
@@ -343,7 +355,8 @@
             safety = setTimeout(() => { try { if (client.stream) client.stream.destroy(); } catch (e) { /* */ } done(); }, 1500);
             try { client.end(!acked, done); } catch (e) { done(); }
           };
-          if (!wasConnected || !pid) { finish(false); return; }
+          if (!wasConnected) { finish(false); return; }
+          if (!pid) { finish(true); return; } // geen presence: meteen nette DISCONNECT
           presenceOn = false;
           let t = null;
           const ack = (ok) => { if (t === false) return; clearTimeout(t); t = false; finish(ok); };
