@@ -55,7 +55,7 @@
   const G = root || {};
 
   const VERSION = 1;
-  const FAMILY = ["Luke", "Viola", "Rivka", "Zara"];
+  const FAMILY = ["Luke", "Viola", "Rifka", "Zarah"];
   const ANIMALS = ["hert", "konijn", "vos", "uil"];
   const DIFFS = ["makkelijk", "normaal", "stoer"];
   const MAX_PLAYERS = 8;

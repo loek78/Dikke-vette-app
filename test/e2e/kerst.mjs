@@ -7,10 +7,10 @@
 // (a) solo: titel → SPELEN → uitleg → aftellen → 30 s autopilot met ECHTE tikken/vegen (CDP touch) op het canvas → ≥ 200 m,
 //     verrassingen, pauze/hervatten, rAF-p95 tijdens snoepregen + noorderlicht met 3 geesten, 0 hartjes → "Tik om verder te
 //     dromen" → nog eens → uitslag.
-// (b) samen: Luke maakt een kamer (?dur=25 → korte run), Viola en Zara doen mee met de code, Rivka via de deellink; klaar →
-//     Start → synchroon aftellen → iedereen rent → geesten met de juiste namen → Rivka's snoepregen = banner op alle 4 →
+// (b) samen: Luke maakt een kamer (?dur=25 → korte run), Viola en Zarah doen mee met de code, Rifka via de deellink; klaar →
+//     Start → synchroon aftellen → iedereen rent → geesten met de juiste namen → Rifka's snoepregen = banner op alle 4 →
 //     Droomster vol (hook op de host) → finale → uitslag met medailles/titels op alle 4 → Viola herlaadt → Nog een keer →
-//     lobby → tweede ronde met de 25 s-timer-finale en een ingedutte Zara → kamer sluiten.
+//     lobby → tweede ronde met de 25 s-timer-finale en een ingedutte Zarah → kamer sluiten.
 // Faalt bij elke mislukte stap, bij elke console-fout/pageerror/dialog en bij elk antwoord ≥ 400 of mislukt verzoek.
 import { existsSync, readFileSync } from "node:fs";
 import os from "node:os";
@@ -19,7 +19,7 @@ import { createEnv, ROOT, assert, eq, until, sleep, log } from "./lib.mjs";
 
 const SHOTS = process.env.E2E_SHOTS || process.env.KERST_SHOTS || join(ROOT, "test-results", "e2e-kerst");
 const P95_LIMIT = process.env.KERST_P95_MS ? +process.env.KERST_P95_MS : 20;
-const NAMES = ["Luke", "Viola", "Rivka", "Zara"];
+const NAMES = ["Luke", "Viola", "Rifka", "Zarah"];
 
 // ---------- hulpjes ----------
 const kerstUrl = (env, suffix = "") => `${env.origin}kerst/?broker=${env.brokerUrl}${suffix}`;
@@ -67,7 +67,7 @@ function startAutopilot(p) {
           const k = window.__kerst, s = k && k.state;
           if (!s) return null;
           if (ghosts && k.game) {
-            const G = [["g1", "Luke", "vos"], ["g2", "Viola", "uil"], ["g3", "Zara", "konijn"]];
+            const G = [["g1", "Luke", "vos"], ["g2", "Viola", "uil"], ["g3", "Zarah", "konijn"]];
             k.game.setGhosts(G.map(([pid, name, animal], i) => ({ pid, name, animal, x: s.x + Math.sin(s.t * 0.7 + i) * 220 - 60, y: Math.max(0, Math.sin(s.t * 3 + i) * 120), anim: "run", stars: i * 7, hearts: 3 })));
           }
           return { phase: s.phase, x: s.x, speed: s.speed, onGround: s.onGround, anim: s.anim, flying: s.flying, sled: s.sled, ev: s.event && s.event.id, hearts: s.hearts, meters: s.meters, obs: s.obstaclesAhead.slice(0, 3) };
@@ -142,7 +142,7 @@ function checkIndexPaths() {
 // ---------- (a) solo ----------
 async function solo(env) {
   const { step } = env;
-  const p = await newPhone(env, "Rivka");
+  const p = await newPhone(env, "Rifka");
   let ap = null;
 
   await step("solo: titel → SPELEN → kies je vriendje → uitleg (eerste keer) → aftellen → rennen", async () => {
@@ -225,7 +225,7 @@ async function solo(env) {
   await step("solo: rAF p95 tijdens snoepregen + noorderlicht met 3 geesten", async () => {
     ap.ghosts = true;
     await sleep(600);
-    await p.page.evaluate(() => { window.__kerst.game.triggerEvent("noorderlicht", {}); window.__kerst.game.triggerEvent("snoepregen", { by: "Zara" }); });
+    await p.page.evaluate(() => { window.__kerst.game.triggerEvent("noorderlicht", {}); window.__kerst.game.triggerEvent("snoepregen", { by: "Zarah" }); });
     const st0 = await until(async () => { const s = await stateOf(p); return s && s.candyRain && s.theme === "aurora" && s.ghosts.length === 3 ? s : null; }, { timeout: 2500, msg: "snoepregen + noorderlicht + 3 geesten actief" });
     await sleep(700); // even warmdraaien (aurora-caches)
     await recFrames(p);
@@ -338,34 +338,34 @@ async function samen(env) {
     eq(await playersOn(viola), ["Luke", "Viola"], "Viola ziet Luke (baas) en zichzelf");
   });
 
-  await step("samen: Rivka via de deellink ?join=CODE&b=0 (reekalfje), Zara met de code (konijn, makkelijk)", async () => {
+  await step("samen: Rifka via de deellink ?join=CODE&b=0 (reekalfje), Zarah met de code (konijn, makkelijk)", async () => {
     await rivka.goto(`${env.origin}kerst/?join=${code}&b=0&broker=${env.brokerUrl}`);
     await waitScreen(rivka, "together");
     assert((await text(rivka, "#joinHint")).includes(code), "uitnodiging met de code");
     assert((await text(rivka, "#btnJoin")).includes(code), `knop noemt de kamer (${await text(rivka, "#btnJoin")})`);
     assert(!(await rivka.page.url()).includes("join="), "deellink-parameters uit de URL gehaald");
-    await pickProfile(rivka, "Rivka", "hert", "normaal");
+    await pickProfile(rivka, "Rifka", "hert", "normaal");
     await rivka.shot("63-uitgenodigd");
     await rivka.tap("#btnJoin");
     await waitScreen(rivka, "lobby");
-    pids.rivka = await pidOf(rivka);
+    pids.rifka = await pidOf(rivka);
 
     await zara.goto(kerstUrl(env));
     await waitScreen(zara, "title");
     await zara.tap("#btnTogether");
     await waitScreen(zara, "together");
-    await pickProfile(zara, "Zara", "konijn", "makkelijk");
+    await pickProfile(zara, "Zarah", "konijn", "makkelijk");
     await zara.tap("#btnJoin");
     await zara.page.waitForSelector("#joinOverlay.is-on");
     await zara.page.fill("#codeInput", code);
     await zara.tap("#btnJoinGo");
     await waitScreen(zara, "lobby");
-    pids.zara = await pidOf(zara);
+    pids.zarah = await pidOf(zara);
     for (const p of all) await until(async () => (await playersOn(p)).length === 4, { timeout: 10000, msg: `${p.name} ziet 4 spelers` });
     for (const p of all) eq(await playersOn(p), NAMES, `${p.name}: spelers in volgorde (baas eerst)`);
     const st = await sessionState(luke);
-    eq([st.players[pids.luke].animal, st.players[pids.viola].animal, st.players[pids.rivka].animal, st.players[pids.zara].animal], ["vos", "uil", "hert", "konijn"], "vriendjes in de state");
-    eq(st.players[pids.zara].difficulty, "makkelijk", "Zara speelt makkelijk");
+    eq([st.players[pids.luke].animal, st.players[pids.viola].animal, st.players[pids.rifka].animal, st.players[pids.zarah].animal], ["vos", "uil", "hert", "konijn"], "vriendjes in de state");
+    eq(st.players[pids.zarah].difficulty, "makkelijk", "Zarah speelt makkelijk");
     eq(st.durationSec, 25, "testrun van 25 s via ?dur=");
     await luke.shot("64-lobby-vol");
     await rivka.shot("64-lobby-vol");
@@ -409,13 +409,13 @@ async function samen(env) {
     await rivka.shot("71-geesten");
   });
 
-  await step("samen: Rivka pakt Snoepregen → snoep + banner op alle 4", async () => {
+  await step("samen: Rifka pakt Snoepregen → snoep + banner op alle 4", async () => {
     await rivka.page.evaluate(() => window.__kerst.game.grantPowerup("snoepregen"));
     for (const p of all) await until(async () => (await stateOf(p)).candyRain, { timeout: 4000, msg: `${p.name}: het snoep regent` });
-    const own = await until(() => bannerText(rivka), { timeout: 2000, msg: "Rivka's eigen banner" });
-    assert(own.includes("Snoepregen"), `Rivka: power-up-banner (${own})`);
+    const own = await until(() => bannerText(rivka), { timeout: 2000, msg: "Rifka's eigen banner" });
+    assert(own.includes("Snoepregen"), `Rifka: power-up-banner (${own})`);
     for (const p of all.filter((x) => x !== rivka)) {
-      const b = await until(async () => { const t = await bannerText(p); return t.includes("Rivka") ? t : null; }, { timeout: 4000, msg: `${p.name}: banner van Rivka` });
+      const b = await until(async () => { const t = await bannerText(p); return t.includes("Rifka") ? t : null; }, { timeout: 4000, msg: `${p.name}: banner van Rifka` });
       assert(b.includes("Snoepregen") && b.includes("laat het snoep regenen"), `${p.name}: banner (${b})`);
     }
     await sleep(700);
@@ -430,7 +430,7 @@ async function samen(env) {
     await luke.shot("73-event-noorderlicht");
     await zara.shot("73-event-peperkoek");
     eq((await stateOf(luke)).theme, "aurora", "Luke ziet het noorderlicht");
-    eq((await stateOf(zara)).theme, "peperkoek", "Zara ziet de peperkoekwereld");
+    eq((await stateOf(zara)).theme, "peperkoek", "Zarah ziet de peperkoekwereld");
     await viola.page.evaluate(() => window.__kerst.game.triggerEvent("droomflip", {}));
     await rivka.page.evaluate(() => window.__kerst.game.triggerEvent("reuzenboom", {}));
     await sleep(2500);
@@ -447,7 +447,7 @@ async function samen(env) {
   await step("samen: Droomster vol (host-hook) → finale op alle 4 → uitslag met medailles en titels op alle 4", async () => {
     await luke.page.evaluate(() => window.__kerst.session.publishEvt({ ev: "finale", reason: "droomster" }));
     for (const p of all) await waitPhase(p, "finale", 4000);
-    const b = await until(async () => { const t = await bannerText(zara); return t.includes("Finale") ? t : null; }, { timeout: 3000, msg: "finale-banner bij Zara" });
+    const b = await until(async () => { const t = await bannerText(zara); return t.includes("Finale") ? t : null; }, { timeout: 3000, msg: "finale-banner bij Zarah" });
     assert(b.includes("Droomster"), `banner noemt de Droomster (${b})`);
     await sleep(2500);
     await luke.shot("74-finale");
@@ -504,7 +504,7 @@ async function samen(env) {
     await viola.shot("90-lobby-opnieuw");
   });
 
-  await step("samen: ronde 2 — Viola klaar, Start → timer-finale (T−10) → Zara dut in (pauze) → uitslag → kamer sluiten", async () => {
+  await step("samen: ronde 2 — Viola klaar, Start → timer-finale (T−10) → Zarah dut in (pauze) → uitslag → kamer sluiten", async () => {
     await viola.tap("#btnReady");
     await until(async () => !(await luke.page.isDisabled("#btnStart")), { timeout: 5000, msg: "Start actief" });
     await luke.tap("#btnStart");
@@ -512,30 +512,30 @@ async function samen(env) {
     eq((await sessionState(luke)).round, 2, "ronde 2");
     startAll();
     await sleep(1500);
-    // Rivka wordt vroeg wakker (twee keer 0 hartjes) terwijl Zara pauzeert: ze ziet hoe lang de anderen nog dromen
+    // Rifka wordt vroeg wakker (twee keer 0 hartjes) terwijl Zarah pauzeert: ze ziet hoe lang de anderen nog dromen
     await autopilots.get(rivka).stop(); autopilots.delete(rivka);
     const rivkaEarly = (async () => {
       for (let k = 0; k < 2; k++) {
         for (let i = 0; i < 6 && !["fading", "ending", "end"].includes((await stateOf(rivka)).phase); i++) await rivka.page.evaluate(() => window.__kerst.game.hurt("test", true));
-        if ((await stateOf(rivka)).phase === "fading") { await sleep(300); await (await touchOf(rivka)).tap(); await until(async () => ["run", "finale"].includes((await stateOf(rivka)).phase), { timeout: 3000, msg: "Rivka droomt verder" }); await sleep(2600); }
+        if ((await stateOf(rivka)).phase === "fading") { await sleep(300); await (await touchOf(rivka)).tap(); await until(async () => ["run", "finale"].includes((await stateOf(rivka)).phase), { timeout: 3000, msg: "Rifka droomt verder" }); await sleep(2600); }
       }
-      await until(async () => (await stateOf(rivka)).phase === "end", { timeout: 8000, msg: "Rivka's droom is voorbij" });
-      return until(async () => { const t = await text(rivka, "#busySub"); return (await rivka.page.isVisible("#busy.is-on")) && /dromen nog \d+ s/.test(t) ? t : null; }, { timeout: 5000, msg: "Rivka ziet hoe lang de anderen nog dromen" });
+      await until(async () => (await stateOf(rivka)).phase === "end", { timeout: 8000, msg: "Rifka's droom is voorbij" });
+      return until(async () => { const t = await text(rivka, "#busySub"); return (await rivka.page.isVisible("#busy.is-on")) && /dromen nog \d+ s/.test(t) ? t : null; }, { timeout: 5000, msg: "Rifka ziet hoe lang de anderen nog dromen" });
     })();
-    // Zara pauzeert: na 5 s zonder pos ziet de rest "Zara 😴"
+    // Zarah pauzeert: na 5 s zonder pos ziet de rest "Zarah 😴"
     await autopilots.get(zara).stop(); autopilots.delete(zara);
     await zara.tap("#btnPause");
-    await until(async () => (await stateOf(zara)).paused, { timeout: 2000, msg: "Zara pauzeert" });
-    await until(async () => (await stateOf(luke)).ghosts.includes("Zara 😴"), { timeout: 9000, interval: 200, msg: "Luke ziet Zara ingedut" });
+    await until(async () => (await stateOf(zara)).paused, { timeout: 2000, msg: "Zarah pauzeert" });
+    await until(async () => (await stateOf(luke)).ghosts.includes("Zarah 😴"), { timeout: 9000, interval: 200, msg: "Luke ziet Zarah ingedut" });
     assert(await luke.page.$("#hudGhosts .kd-ghost.is-asleep"), "chip gedimd");
     await luke.shot("91-ingedut");
     await zara.tap("#btnResume");
-    await until(async () => { const s = await stateOf(zara); return s && !s.paused && s.countdown == null; }, { timeout: 5000, msg: "Zara rent weer" });
+    await until(async () => { const s = await stateOf(zara); return s && !s.paused && s.countdown == null; }, { timeout: 5000, msg: "Zarah rent weer" });
     autopilots.set(zara, startAutopilot(zara));
-    await until(async () => !(await stateOf(luke)).ghosts.includes("Zara 😴"), { timeout: 4000, msg: "Zara is weer wakker" });
-    // Rivka werd intussen vroeg wakker (twee keer 0 hartjes): zij wacht op de rest — de run van de anderen loopt door
+    await until(async () => !(await stateOf(luke)).ghosts.includes("Zarah 😴"), { timeout: 4000, msg: "Zarah is weer wakker" });
+    // Rifka werd intussen vroeg wakker (twee keer 0 hartjes): zij wacht op de rest — de run van de anderen loopt door
     const wait = await rivkaEarly;
-    log(`  Rivka vroeg wakker: "${wait}"`);
+    log(`  Rifka vroeg wakker: "${wait}"`);
     eq(await screenOf(luke), "game", "Luke rent gewoon door");
     assert((await stateOf(luke)).phase === "run" || (await stateOf(luke)).phase === "finale", "Luke's run loopt nog");
     await rivka.shot("91b-vroeg-wakker");
@@ -548,9 +548,9 @@ async function samen(env) {
     for (const p of all) await waitScreen(p, "results", 40000);
     await stopAll();
     const st = await sessionState(luke);
-    eq(Object.keys(st.results).length, 4, "vier resultaten in ronde 2 (ook die van de vroeg wakkere Rivka)");
+    eq(Object.keys(st.results).length, 4, "vier resultaten in ronde 2 (ook die van de vroeg wakkere Rifka)");
     eq(st.round, 2, "ronde 2 uitslag");
-    assert(st.results[pids.rivka] && st.results[pids.rivka].meters > 0, "Rivka's vroege uitslag telt mee");
+    assert(st.results[pids.rifka] && st.results[pids.rifka].meters > 0, "Rifka's vroege uitslag telt mee");
     await luke.shot("93-uitslag-ronde2");
     // Luke sluit de kamer: iedereen terug naar het begin
     await luke.tap("#btnResHome");

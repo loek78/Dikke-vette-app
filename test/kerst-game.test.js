@@ -434,11 +434,11 @@ test("snoepregen: via power-up meldt onCandyRain, via triggerEvent niet (extern)
   play(g, 4);
   assert.equal(g.state.candyRain, false);
   const { g: g2, log: log2 } = make({ seed: 1 }, { onCandyRain: () => rain++ });
-  assert.equal(g2.triggerEvent("snoepregen", { by: "Rivka" }), true);
+  assert.equal(g2.triggerEvent("snoepregen", { by: "Rifka" }), true);
   assert.equal(rain, 1, "extern → niet opnieuw rondsturen");
   assert.equal(g2.state.candyRain, true);
   const ev = log2.find((e) => e.id === "snoepregen");
-  assert.ok(ev && ev.d.external === true && ev.d.by === "Rivka");
+  assert.ok(ev && ev.d.external === true && ev.d.by === "Rifka");
   assert.equal(g2.state.event, null, "snoepregen bezet het event-slot niet");
   assert.ok(log.length >= 1);
 });
@@ -554,7 +554,7 @@ test("multiplayer-run van 90 s: finale in de laatste 10 s, einde op 90 s", () =>
   // extern 'finale' (droomster vol) start de finale eerder
   const { g: g2 } = make({ seed: 8, durationSec: 90 });
   play(g2, 20);
-  g2.triggerEvent("finale", { names: ["Luke", "Viola", "Rivka", "Zara"] });
+  g2.triggerEvent("finale", { names: ["Luke", "Viola", "Rifka", "Zarah"] });
   assert.equal(g2.state.phase, "finale");
   assert.equal(g2.state.event.id, "finale");
   g2.setDroomster(1); assert.equal(g2.state.droomster, 1);
@@ -572,17 +572,17 @@ test("solo: elke 500 m vuurwerk", () => {
 
 test("geesten: interpolatie, naamplaatjes, verdwijnen", () => {
   const { g } = make({ seed: 1 });
-  g.setGhosts([{ pid: "a", name: "Luke", animal: "vos", x: 500, y: 0, anim: "run", stars: 3, hearts: 3 }, { pid: "b", name: "Zara", animal: "konijn", x: 100, y: 50 }]);
+  g.setGhosts([{ pid: "a", name: "Luke", animal: "vos", x: 500, y: 0, anim: "run", stars: 3, hearts: 3 }, { pid: "b", name: "Zarah", animal: "konijn", x: 100, y: 50 }]);
   let gh = g.state.ghosts;
   assert.equal(gh.length, 2);
-  assert.deepEqual(gh.map((x) => x.name), ["Luke", "Zara"]);
+  assert.deepEqual(gh.map((x) => x.name), ["Luke", "Zarah"]);
   assert.equal(gh[0].x, 500);
   assert.equal(gh[1].animal, "konijn");
   g.advance(0.2);
   g.setGhosts([{ pid: "a", name: "Luke", animal: "vos", x: 560, y: 0 }]);
   g.advance(0.1);
   gh = g.state.ghosts;
-  assert.equal(gh.length, 1, "Zara weg");
+  assert.equal(gh.length, 1, "Zarah weg");
   assert.ok(gh[0].x > 500 && gh[0].x < 700, `glijdt naar het doel (${gh[0].x.toFixed(0)})`);
   g.advance(1);
   assert.ok(gh[0].x < g.state.ghosts[0].x, "beweegt door op geschatte snelheid");
@@ -690,11 +690,11 @@ test("e2e: 30 s autopilot in Chromium (normaal + stoer), ≥200 m, geen console-
 window.__frames = []; (function rec(){ let last = performance.now(); function f(t){ window.__frames.push(t - last); last = t; requestAnimationFrame(f); } requestAnimationFrame(f); })();
 window.__boot = function (difficulty, seed) {
   const events = [];
-  const game = KerstGame.create(document.getElementById("c"), { seed, difficulty, animal: "hert", name: "Rivka", drawText: true,
+  const game = KerstGame.create(document.getElementById("c"), { seed, difficulty, animal: "hert", name: "Rifka", drawText: true,
     hooks: { onEvent: (id, d) => events.push({ id, t: game.state.t }), onEnd: () => events.push({ id: "END" }) } });
   window.__kerst = { game, get state() { return game.state; }, events };
   game.start(null);
-  const ghosts = [["p1","Luke","vos"],["p2","Viola","uil"],["p3","Zara","konijn"],["p4","Papa","hert"]];
+  const ghosts = [["p1","Luke","vos"],["p2","Viola","uil"],["p3","Zarah","konijn"],["p4","Papa","hert"]];
   function tick() {
     const st = game.state;
     if (st.phase === "end") return;
@@ -727,7 +727,7 @@ window.__boot = function (difficulty, seed) {
       await page.setContent(html, { waitUntil: "load" });
       await page.evaluate(([d, s]) => window.__boot(d, s), [difficulty, 2024]);
       await page.waitForTimeout(5000);
-      await page.evaluate(() => { window.__frames.length = 0; window.__kerst.game.triggerEvent("snoepregen", { by: "Zara" }); });
+      await page.evaluate(() => { window.__frames.length = 0; window.__kerst.game.triggerEvent("snoepregen", { by: "Zarah" }); });
       if (shotsDir) await page.screenshot({ path: path.join(shotsDir, `e2e-${difficulty}-snoepregen.png`) });
       await page.waitForTimeout(25000);
       const r = await page.evaluate(() => {

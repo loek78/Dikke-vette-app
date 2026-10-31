@@ -114,7 +114,7 @@ test("validateChunk vangt onmogelijke patronen", () => {
 
 test("determinisme per seed en moeilijkheid", () => {
   for (const d of DIFFS) {
-    for (const seed of [0, 1, 42, "BAKO", "Rivka", 2 ** 31 - 1, -7]) {
+    for (const seed of [0, 1, 42, "BAKO", "Rifka", 2 ** 31 - 1, -7]) {
       const a = fingerprint(L.generate(seed, d), 12000), b = fingerprint(L.generate(seed, d), 12000);
       assert.equal(a, b, `seed ${seed} ${d}`);
     }

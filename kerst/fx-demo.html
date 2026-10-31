@@ -75,7 +75,7 @@
   // ---- mock-wereld: Vlok rent, springt af en toe; wereld-eenheden zoals game.js (y = hoogte boven de grond) ----
   const P = { x: 0, y: 0, vy: 0, onGround: true, anim: "run", jumpT: 1.6, t: 0, speed: 260 };
   let stars = 0, taken = 0, camX = 0, lastEv = "—";
-  const names = ["Luke", "Viola", "Rivka", "Zara"];
+  const names = ["Luke", "Viola", "Rifka", "Zarah"];
   function resize() {
     W = innerWidth || 390; H = innerHeight || 844; dpr = Math.min(DPR_CAP, devicePixelRatio || 1);
     canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
@@ -158,7 +158,7 @@
     mb.classList.add("mute");
   }
   function trigger(id) {
-    fx.trigger(id, { names, by: "Rivka", x: id === "geheimpje" && A ? A.moonAt(W, H).x : undefined, y: id === "geheimpje" && A ? A.moonAt(W, H).y : undefined });
+    fx.trigger(id, { names, by: "Rifka", x: id === "geheimpje" && A ? A.moonAt(W, H).x : undefined, y: id === "geheimpje" && A ? A.moonAt(W, H).y : undefined });
     if (A && id === "geheimpje") { A.moonWink = true; setTimeout(() => { A.moonWink = false; }, 2500); }
     if (AU) { AU.duck(700); if (id === "noorderlicht") AU.setMusic("aurora"); else if (id === "peperkoek") AU.setMusic("peperkoek"); else if (id === "finale") AU.play("fanfare"); else if (id === "sneeuwbol") AU.play("revive"); else if (id === "droomflip") AU.play("whoosh"); else if (id === "kerstman") AU.play("bell"); else AU.play("twinkle"); }
     if (AU && (id === "noorderlicht" || id === "peperkoek")) setTimeout(() => { if (fx.theme === "nacht") AU.setMusic("nacht"); }, FX.EVENTS[id] * 1000 + 100);
@@ -180,7 +180,7 @@
 
   // ---- start (+ ?fx= en ?t=) ----
   const auto = (Q.get("fx") || "").split(",").map((s) => s.trim()).filter(Boolean);
-  for (const id of auto) fx.trigger(id, { names, by: "Rivka" });
+  for (const id of auto) fx.trigger(id, { names, by: "Rifka" });
   if (frozen) { const T = Math.max(0, +Q.get("t") || 0); for (let i = 0, n = Math.round(T * 60); i < n; i++) frame(1 / 60); if (!auto.length) frame(1 / 60); }
   else requestAnimationFrame((n) => { last = n; raf(n); });
 
@@ -188,7 +188,7 @@
   window.__fxdemo = {
     fx, errors, get world() { return world(); }, get stars() { return stars; }, get taken() { return taken; },
     step(dt, n) { for (let i = 0; i < (n || 1); i++) frame(dt || 1 / 60); },
-    trigger(id, data) { return fx.trigger(id, Object.assign({ names, by: "Rivka" }, data || {})); },
+    trigger(id, data) { return fx.trigger(id, Object.assign({ names, by: "Rifka" }, data || {})); },
     // meet update+drawBack+drawFront van fx over `frames` frames op een eigen canvas, met een flush (getImageData) per
     // frame zodat ook het rasteren meetelt; de mock-wereld wordt niet getekend en telt dus niet mee
     bench(frames) {

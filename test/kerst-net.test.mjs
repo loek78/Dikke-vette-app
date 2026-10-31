@@ -50,7 +50,7 @@ test("topics volgen het dva/v1/<CODE>/ voorvoegsel", () => {
   assert.equal(T.evt, "dva/v1/BAKO/evt");
   assert.equal(T.done("p1"), "dva/v1/BAKO/done/p1");
   assert.ok(DVNet.topicMatch(T.posAll, T.pos("abc")));
-  assert.deepEqual(KN.FAMILY, ["Luke", "Viola", "Rivka", "Zara"]);
+  assert.deepEqual(KN.FAMILY, ["Luke", "Viola", "Rifka", "Zarah"]);
 });
 
 test("newLobby + reduce: join/set/ready/leave/presence, zelfde referentie als er niets verandert", () => {
@@ -61,14 +61,14 @@ test("newLobby + reduce: join/set/ready/leave/presence, zelfde referentie als er
   assert.equal(st0.durationSec, KN.DURATION_SEC, "standaard een run van 90 s");
   assert.equal(KN.newLobby({ code: "BAKO", hostPid: "h", host: {}, durationSec: 25 }).durationSec, 25, "testruns (?dur=) mogen korter");
   assert.equal(KN.newLobby({ code: "BAKO", hostPid: "h", host: {}, durationSec: -3 }).durationSec, KN.DURATION_SEC, "onzin → standaard");
-  const st1 = KN.reduce(st0, { t: "join", pid: "r", d: { name: "  Rivka  ", animal: "hert", difficulty: "makkelijk" } }, 2000);
+  const st1 = KN.reduce(st0, { t: "join", pid: "r", d: { name: "  Rifka  ", animal: "hert", difficulty: "makkelijk" } }, 2000);
   assert.notEqual(st1, st0);
   assert.equal(st0.players.r, undefined, "input niet gemuteerd");
-  assert.deepEqual(st1.players.r, { name: "Rivka", animal: "hert", difficulty: "makkelijk", ready: false, online: true, joinedAt: 2000 });
+  assert.deepEqual(st1.players.r, { name: "Rifka", animal: "hert", difficulty: "makkelijk", ready: false, online: true, joinedAt: 2000 });
   assert.equal(st1.updatedAt, 2000);
   // onbekende waarden worden schoongemaakt
-  const st2 = KN.reduce(st1, { t: "join", pid: "z", d: { name: "Zara\u0007<b>", animal: "draak", difficulty: "onmogelijk" } }, 2100);
-  assert.equal(st2.players.z.name, "Zara<b>");
+  const st2 = KN.reduce(st1, { t: "join", pid: "z", d: { name: "Zarah\u0007<b>", animal: "draak", difficulty: "onmogelijk" } }, 2100);
+  assert.equal(st2.players.z.name, "Zarah<b>");
   assert.equal(st2.players.z.animal, "hert");
   assert.equal(st2.players.z.difficulty, "normaal");
   // set zonder verandering → zelfde referentie
@@ -103,7 +103,7 @@ test("canStart / startRun / againState / finishRun", () => {
   const st0 = KN.newLobby({ code: "BAKO", hostPid: "h", host: { name: "Luke" }, seed: 1, now: 1000 });
   assert.equal(KN.canStart(st0).ok, true, "alleen de host → solo starten mag");
   assert.equal(KN.canStart(st0).solo, true);
-  const st1 = KN.reduce(st0, { t: "join", pid: "r", d: { name: "Rivka" } }, 2000);
+  const st1 = KN.reduce(st0, { t: "join", pid: "r", d: { name: "Rifka" } }, 2000);
   assert.equal(KN.canStart(st1).ok, false, "iemand anders in de kamer maar niemand klaar");
   const st2 = KN.reduce(st1, { t: "set", pid: "r", d: { ready: true } }, 2100);
   assert.equal(KN.canStart(st2).ok, true);
@@ -116,7 +116,7 @@ test("canStart / startRun / againState / finishRun", () => {
   const fin = KN.finishRun(run, { h: { stars: 10, meters: 300 }, r: { stars: 30, meters: 200, candies: 4 } }, { sum: 40, target: 100, frac: 0.4 }, 9000);
   assert.equal(fin.phase, "results");
   assert.equal(fin.ranking[0].pid, "r");
-  assert.equal(fin.ranking[0].name, "Rivka", "naam uit de spelerslijst");
+  assert.equal(fin.ranking[0].name, "Rifka", "naam uit de spelerslijst");
   assert.equal(fin.total.stars, 40);
   assert.deepEqual(fin.droomster, { sum: 40, target: 100, frac: 0.4 });
   const again = KN.againState(fin, { seed: 888, now: 9500 });
@@ -173,8 +173,8 @@ test("assignMedals: ranking op sterren, dense medailles, iedereen een unieke tit
   const res = {
     luke: { name: "Luke", stars: 40, meters: 900, candies: 2, maxHeight: 300, bells: 3, gifts: 1, jumps: 50, hearts: 3 },
     viola: { name: "Viola", stars: 40, meters: 700, candies: 9, maxHeight: 200, bells: 0, gifts: 0, jumps: 30, hearts: 2 },
-    rivka: { name: "Rivka", stars: 55, meters: 500, candies: 3, maxHeight: 420, bells: 7, gifts: 2, wishes: 1, jumps: 60, hearts: 1, revived: true },
-    zara: { name: "Zara", stars: 12, meters: 300, candies: 0, maxHeight: 100, bells: 0, gifts: 0, jumps: 10, hearts: 3 },
+    rivka: { name: "Rifka", stars: 55, meters: 500, candies: 3, maxHeight: 420, bells: 7, gifts: 2, wishes: 1, jumps: 60, hearts: 1, revived: true },
+    zara: { name: "Zarah", stars: 12, meters: 300, candies: 0, maxHeight: 100, bells: 0, gifts: 0, jumps: 10, hearts: 3 },
   };
   const r = KN.assignMedals(res);
   assert.deepEqual(r.map((p) => p.pid), ["rivka", "luke", "viola", "zara"]);
@@ -192,8 +192,8 @@ test("assignMedals: ranking op sterren, dense medailles, iedereen een unieke tit
   assert.ok(zeros.every((p) => p.title));
   assert.ok(zeros.every((p) => p.rank === 1 && p.medal === "🥇"), "allemaal gelijk → allemaal goud");
   // namen uit de spelerslijst als het resultaat er geen heeft
-  const named = KN.assignMedals({ x: { stars: 3 } }, { x: { name: "Zara", animal: "uil" } });
-  assert.equal(named[0].name, "Zara");
+  const named = KN.assignMedals({ x: { stars: 3 } }, { x: { name: "Zarah", animal: "uil" } });
+  assert.equal(named[0].name, "Zarah");
   assert.equal(named[0].animal, "uil");
   const tot = KN.familyTotal(res);
   assert.deepEqual(tot, { players: 4, stars: 147, meters: 2400, candies: 14, bells: 10, gifts: 3 });
@@ -230,14 +230,14 @@ test("lobby: host maakt kamer, spelers joinen, state gaat rond (retained) en rea
   assert.equal(host.state.hostPid, "luke");
   assert.equal(host.players.length, 1);
 
-  const rivka = await session({ role: "join", code, pid: "rivka", profile: { name: "Rivka", animal: "hert", difficulty: "makkelijk" }, brokers });
+  const rivka = await session({ role: "join", code, pid: "rivka", profile: { name: "Rifka", animal: "hert", difficulty: "makkelijk" }, brokers });
   assert.equal(rivka.isHost, false);
-  assert.ok(rivka.state.players.rivka, "Rivka staat na createSession in de state");
+  assert.ok(rivka.state.players.rivka, "Rifka staat na createSession in de state");
   assert.equal(rivka.state.players.rivka.ready, false);
-  assert.equal(host.state.players.rivka.name, "Rivka");
+  assert.equal(host.state.players.rivka.name, "Rifka");
 
-  const zara = await session({ role: "join", code, pid: "zara", profile: { name: "Zara", animal: "uil" }, brokers });
-  await until(() => rivka.state.players.zara && host.state.players.zara, 4000, "Zara zichtbaar bij iedereen");
+  const zara = await session({ role: "join", code, pid: "zara", profile: { name: "Zarah", animal: "uil" }, brokers });
+  await until(() => rivka.state.players.zara && host.state.players.zara, 4000, "Zarah zichtbaar bij iedereen");
   assert.deepEqual(KN.playerList(rivka.state).map((p) => p.pid), ["luke", "rivka", "zara"]);
   assert.equal(KN.canStart(host.state).ok, false, "niemand is nog klaar");
 
@@ -253,8 +253,8 @@ test("lobby: host maakt kamer, spelers joinen, state gaat rond (retained) en rea
 
   // verlaten → weg uit de lijst
   await zara.close();
-  await until(() => !host.state.players.zara, 4000, "Zara weg na leave");
-  await until(() => !rivka.state.players.zara, 4000, "Zara ook weg bij Rivka");
+  await until(() => !host.state.players.zara, 4000, "Zarah weg na leave");
+  await until(() => !rivka.state.players.zara, 4000, "Zarah ook weg bij Rifka");
 });
 
 test("join: onbekende kamer en foute code geven een duidelijke fout", async () => {
@@ -268,11 +268,11 @@ test("pos: QoS 0 fan-out naar de anderen, niet naar jezelf, niet retained; done 
   const brokers = [urlOf(b)];
   const code = freshCode();
   const host = await session({ role: "host", code, pid: "luke", profile: { name: "Luke" }, brokers });
-  const rivka = await session({ role: "join", code, pid: "rivka", profile: { name: "Rivka" }, brokers });
+  const rivka = await session({ role: "join", code, pid: "rivka", profile: { name: "Rifka" }, brokers });
   const viola = await session({ role: "join", code, pid: "viola", profile: { name: "Viola" }, brokers });
   await until(() => host.state.players.viola && rivka.state.players.viola, 4000, "allemaal in de lobby");
   await rivka.send("set", { ready: true });
-  await until(() => host.state.players.rivka.ready, 4000, "Rivka klaar");
+  await until(() => host.state.players.rivka.ready, 4000, "Rifka klaar");
   host.startRun(4242);
   await until(() => rivka.state.phase === "run" && viola.state.phase === "run", 4000, "run-state bij iedereen");
   assert.equal(rivka.state.seed, 4242);
@@ -287,17 +287,17 @@ test("pos: QoS 0 fan-out naar de anderen, niet naar jezelf, niet retained; done 
   viola.on("pos", (pid, pos) => gotV.push([pid, pos]));
   host.on("pos", (pid, pos) => gotH.push([pid, pos]));
   await rivka.publishPos({ x: 500, y: 0, anim: "run", stars: 7, hearts: 3, pw: null, meters: 15, t: 3.0 });
-  await until(() => gotV.length && gotH.length, 4000, "pos van Rivka bij Viola en host");
+  await until(() => gotV.length && gotH.length, 4000, "pos van Rifka bij Viola en host");
   assert.equal(gotV[0][0], "rivka");
   assert.equal(gotV[0][1].x, 500);
   assert.equal(gotV[0][1].stars, 7);
   assert.equal(gotV[0][1].round, 1);
   await sleep(150);
   assert.equal(gotR.length, 0, "je eigen pos komt niet terug als ghost");
-  // ghosts(): Rivka is zichtbaar voor Viola, wakker
+  // ghosts(): Rifka is zichtbaar voor Viola, wakker
   const gh = viola.ghosts();
   assert.equal(gh.length, 1);
-  assert.equal(gh[0].name, "Rivka");
+  assert.equal(gh[0].name, "Rifka");
   assert.equal(gh[0].asleep, false);
   assert.equal(viola.ghosts(Date.now() + KN.ASLEEP_MS + 1)[0].asleep, true, "zonder pos 5 s → ingedut");
 
@@ -324,9 +324,9 @@ test("Droomster: host telt sterren, verspreidt de fractie via zijn pos en stuurt
   const brokers = [urlOf(b)];
   const code = freshCode();
   const host = await session({ role: "host", code, pid: "luke", profile: { name: "Luke" }, brokers });
-  const rivka = await session({ role: "join", code, pid: "rivka", profile: { name: "Rivka" }, brokers });
+  const rivka = await session({ role: "join", code, pid: "rivka", profile: { name: "Rifka" }, brokers });
   await rivka.send("set", { ready: true });
-  await until(() => host.state.players.rivka && host.state.players.rivka.ready, 4000, "Rivka klaar");
+  await until(() => host.state.players.rivka && host.state.players.rivka.ready, 4000, "Rifka klaar");
   host.startRun(1);
   await until(() => rivka.state.phase === "run", 4000, "run");
   const target = KN.droomsterTarget(2);
@@ -335,21 +335,21 @@ test("Droomster: host telt sterren, verspreidt de fractie via zijn pos en stuurt
   rivka.on("evt", (e) => evtsR.push(e));
   host.on("evt", (e) => evtsH.push(e));
   await rivka.publishPos({ x: 100, y: 0, anim: "run", stars: Math.floor(target * 0.6), hearts: 3, meters: 3 });
-  await until(() => host.droomster().sum >= target * 0.6 - 1, 4000, "host telt Rivka's sterren");
+  await until(() => host.droomster().sum >= target * 0.6 - 1, 4000, "host telt Rifka's sterren");
   await host.publishPos({ x: 90, y: 0, anim: "run", stars: 10, hearts: 3, meters: 3 });
-  await until(() => fracsR.length, 4000, "Rivka krijgt de Droomster-fractie van de host");
+  await until(() => fracsR.length, 4000, "Rifka krijgt de Droomster-fractie van de host");
   assert.ok(Math.abs(fracsR[fracsR.length - 1] - (Math.floor(target * 0.6) + 10) / target) < 0.01, "fractie klopt: " + fracsR);
   assert.equal(evtsR.length, 0, "nog geen finale");
   // vol → finale-event bij iedereen (ook lokaal bij de host), precies één keer
   await host.publishPos({ x: 120, y: 0, anim: "run", stars: target, hearts: 3, meters: 4 });
-  await until(() => evtsR.some((e) => e.ev === "finale"), 4000, "finale bij Rivka");
+  await until(() => evtsR.some((e) => e.ev === "finale"), 4000, "finale bij Rifka");
   assert.ok(evtsH.some((e) => e.ev === "finale" && e.reason === "droomster"), "finale ook lokaal bij de host");
   await host.publishPos({ x: 130, y: 0, anim: "run", stars: target + 5, hearts: 3, meters: 4 });
   await sleep(200);
   assert.equal(evtsH.filter((e) => e.ev === "finale").length, 1, "finale maar één keer");
   // team-event van een speler komt bij de host (en bij de speler zelf, lokaal)
   await rivka.publishEvt({ ev: "snoepregen" });
-  await until(() => evtsH.some((e) => e.ev === "snoepregen" && e.by === "rivka" && e.name === "Rivka"), 4000, "snoepregen bij host");
+  await until(() => evtsH.some((e) => e.ev === "snoepregen" && e.by === "rivka" && e.name === "Rifka"), 4000, "snoepregen bij host");
   assert.ok(evtsR.some((e) => e.ev === "snoepregen"), "lokaal ook");
   assert.ok(!evtsR.some((e) => e.ev === "ping"), "pings worden niet als event doorgegeven");
   assert.ok(rivka.offset.count > 0, "offset-samples uit host-berichten");
@@ -360,8 +360,8 @@ test("resultaten: host verzamelt done, publiceert results met medailles; herlade
   const brokers = [urlOf(b)];
   const code = freshCode();
   const host = await session({ role: "host", code, pid: "luke", profile: { name: "Luke", animal: "vos" }, brokers });
-  const rivka = await session({ role: "join", code, pid: "rivka", profile: { name: "Rivka", animal: "hert" }, brokers });
-  const zara = await session({ role: "join", code, pid: "zara", profile: { name: "Zara", animal: "uil" }, brokers });
+  const rivka = await session({ role: "join", code, pid: "rivka", profile: { name: "Rifka", animal: "hert" }, brokers });
+  const zara = await session({ role: "join", code, pid: "zara", profile: { name: "Zarah", animal: "uil" }, brokers });
   await rivka.send("set", { ready: true });
   await until(() => host.state.players.zara && host.state.players.rivka.ready, 4000, "lobby compleet");
   host.startRun(5);
@@ -379,18 +379,18 @@ test("resultaten: host verzamelt done, publiceert results met medailles; herlade
   const rk = zara.state.ranking;
   assert.deepEqual(rk.map((p) => p.pid), ["rivka", "luke", "zara"]);
   assert.deepEqual(rk.map((p) => p.medal), ["🥇", "🥈", "🥉"]);
-  assert.equal(rk[0].name, "Rivka");
+  assert.equal(rk[0].name, "Rifka");
   assert.equal(rk[0].animal, "hert");
   assert.equal(new Set(rk.map((p) => p.title)).size, 3);
   assert.equal(zara.state.total.stars, 65);
   assert.ok(zara.state.droomster && zara.state.droomster.target === KN.droomsterTarget(3));
 
-  // Zara herlaadt haar telefoon tijdens de uitslag: opnieuw joinen met dezelfde pid → results-state
+  // Zarah herlaadt haar telefoon tijdens de uitslag: opnieuw joinen met dezelfde pid → results-state
   await zara.close();
-  const zara2 = await session({ role: "join", code, pid: "zara", profile: { name: "Zara", animal: "uil" }, brokers });
+  const zara2 = await session({ role: "join", code, pid: "zara", profile: { name: "Zarah", animal: "uil" }, brokers });
   assert.equal(zara2.state.phase, "results");
   assert.equal(zara2.state.ranking.length, 3);
-  assert.ok(zara2.state.players.zara, "Zara staat (weer) in de lijst");
+  assert.ok(zara2.state.players.zara, "Zarah staat (weer) in de lijst");
 
   // Nog een keer → lobby met een nieuwe seed, klaar-vinkjes uit, done-topics gewist
   const oldSeed = host.state.seed;

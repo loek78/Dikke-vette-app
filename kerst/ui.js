@@ -16,7 +16,7 @@
   const now = () => Date.now();
   const perfNow = () => (W.performance && W.performance.now ? W.performance.now() : Date.now());
 
-  const FAMILY = (Net && Net.FAMILY) || ["Luke", "Viola", "Rivka", "Zara"];
+  const FAMILY = (Net && Net.FAMILY) || ["Luke", "Viola", "Rifka", "Zarah"];
   const ANIMALS = ["hert", "konijn", "vos", "uil"];
   const ANIMAL_NAMES = (Art && Art.NAMES) || { hert: "Vlok", konijn: "Pluis", vos: "Snuf", uil: "Oeki" };
   const ANIMAL_EMOJI = { hert: "🦌", konijn: "🐰", vos: "🦊", uil: "🦉" };
@@ -242,7 +242,7 @@
   W.requestAnimationFrame(liveFrame);
 
   // ---------- pickers ----------
-  // Name chips: Luke · Viola · Rivka · Zara + "Anders…" (free text)
+  // Name chips: Luke · Viola · Rifka · Zarah + "Anders…" (free text)
   function renderNames(box) {
     box.replaceChildren();
     const wrap = box.parentElement.querySelector(".kd-name-field"), input = wrap.querySelector("input");
