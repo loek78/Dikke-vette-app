@@ -25,6 +25,7 @@ const WORDS = [
   { c: "plekken", a: "Café", b: "Restaurant" },
 ];
 const keyOf = (pid) => "key-" + pid + "-secret";
+const hasAck = (s, pid) => Object.prototype.hasOwnProperty.call(s.acks, pid);
 
 // Kamer met n spelers (p0 = host). Elke state wordt diep bevroren → engine mag niets muteren.
 function room(n = 4, opts = {}) {
@@ -35,13 +36,12 @@ function room(n = 4, opts = {}) {
   let state = deepFreeze(E.createState({
     code: "BAKO", host: { pid: "p0", key: keyOf("p0"), name: "Host", avatar: "😎", color: "#ff2e93" }, settings: opts.settings, now,
   }));
-  const seqs = { p0: 0 };
   const r = {
     get s() { return state; },
     set s(v) { state = deepFreeze(v); },
     ctx,
     env(pid, t, d = {}, extra = {}) {
-      const seq = extra.seq != null ? extra.seq : (seqs[pid] = (seqs[pid] || 0) + 1);
+      const seq = extra.seq != null ? extra.seq : (hasAck(state, pid) ? state.acks[pid] : 0) + 1;
       return { pid, key: extra.key != null ? extra.key : keyOf(pid), seq, t, d };
     },
     act(pid, t, d, extra) {
@@ -276,9 +276,8 @@ test("start: usedPairs vermijden en resetten, categoriefilter, a/b swap", () => 
   for (let g = 0; g < 3; g++) {
     r.start();
     seen.push(r.s.words.pairId);
-    r.act("p0", "next"); // reveal: geen geldige next → alleen ack
+    r.act("p0", "next"); // in reveal: geen geldige next → alleen ack
     assert.equal(r.s.phase, "reveal");
-    // spel snel beëindigen: infiltrant vertrekt? Nee, host start opnieuw kan alleen vanuit lobby/over
     const inf = r.infs()[0];
     r.revealAll(); r.hintsAll(); r.voteOut(inf);
     r.act("p0", "next");
@@ -292,7 +291,6 @@ test("start: usedPairs vermijden en resetten, categoriefilter, a/b swap", () => 
   for (let g = 0; g < 4; g++) {
     rc.start();
     assert.equal(rc.s.words.category, "dieren");
-    rc.act("p0", "kick", { target: "zz" });
     const inf = rc.infs()[0];
     rc.revealAll(); rc.hintsAll(); rc.voteOut(inf); rc.act("p0", "next");
   }
@@ -554,7 +552,7 @@ test("closeVote: host only, minstens 1 stem", () => {
   r.act("p1", "closeVote");
   assertAckOnly(prev, r.s, "p1", r.s.acks.p1);
   r.act("p0", "closeVote");
-  assert.ok(["elim", "guess", "over"].includes(r.s.phase) || r.s.phase === "elim");
+  assert.ok(["elim", "guess"].includes(r.s.phase));
   assert.equal(r.s.lastVote.eliminated, "p2");
   assert.deepEqual(r.s.lastVote.tally, { p2: 1 });
   assert.equal(r.p("p2").alive, false);
@@ -562,22 +560,13 @@ test("closeVote: host only, minstens 1 stem", () => {
 
 // ---------- Winnen & scores ----------
 test("woord-modus: burgers winnen, +2 per burger, +1 voor juiste stem", () => {
-  const r = room(4, { seed: 61 });
+  const r = room(5, { seed: 61 });
   r.start(); r.revealAll(); r.hintsAll();
   const inf = r.infs()[0];
   const burgers = r.burgers();
   const wrongVoter = burgers[0];
-  const other = burgers[1];
-  for (const v of r.alive()) {
-    if (v === inf) r.act(v, "vote", { target: other });
-    else if (v === wrongVoter) r.act(v, "vote", { target: other });
-    else r.act(v, "vote", { target: inf });
-  }
-  // inf heeft 2 stemmen (burgers[1], burgers[2]), other heeft 2 → gelijk! Maak wrongVoter dus anders:
-  if (r.s.revote) {
-    for (const v of r.alive()) if (r.s.candidates.includes(inf) && v !== inf) r.act(v, "vote", { target: inf });
-    r.act(inf, "vote", { target: r.s.candidates.find((c) => c !== inf) });
-  }
+  // 3 burgers stemmen inf, wrongVoter stemt burgers[1], inf stemt burgers[1] → inf eruit (3 vs 2)
+  for (const v of r.alive()) r.act(v, "vote", { target: v === inf || v === wrongVoter ? burgers[1] : inf });
   assert.equal(r.s.phase, "elim");
   assert.equal(r.s.lastVote.eliminated, inf);
   assert.equal(r.s.lastVote.role, "infiltrant");
@@ -588,7 +577,7 @@ test("woord-modus: burgers winnen, +2 per burger, +1 voor juiste stem", () => {
   assert.equal(res.winner, "burgers");
   assert.deepEqual(res.roles, r.s.roles);
   assert.ok(res.words.burger && res.words.infiltrant);
-  for (const b of burgers) assert.equal(res.delta[b], 2 + 1, "burger +2 en +1 voor juiste stem in revote");
+  for (const b of burgers) assert.equal(res.delta[b], b === wrongVoter ? 2 : 3, "burger +2, +1 voor juiste stem");
   assert.equal(res.delta[inf], 0);
   for (const pid of Object.keys(res.delta)) assert.equal(r.s.scores[pid], res.delta[pid]);
   const pub = E.publicView(r.s);
@@ -682,7 +671,7 @@ test("blind: Levenshtein ≤ 1 alleen bij woord ≥ 5 tekens; foute gok → burg
 });
 
 test("blind: burger eruit → geen gok-fase; foute gok met 2 infiltranten → spel gaat door", () => {
-  const r = room(5, { seed: 76, settings: { mode: "blind", infiltrants: 2 } });
+  const r = room(6, { seed: 76, settings: { mode: "blind", infiltrants: 2 } });
   r.start(); r.revealAll(); r.hintsAll();
   const [i1] = r.infs();
   r.voteOut(r.burgers()[0]);
@@ -694,7 +683,7 @@ test("blind: burger eruit → geen gok-fase; foute gok met 2 infiltranten → sp
   r.act(i1, "guess", { text: "zzzzzz" });
   assert.equal(r.s.guess.correct, false);
   assert.equal(r.s.phase, "elim");
-  // 1 inf vs 3 burgers -1 → 1 vs 2 → geen winnaar
+  // 2 inf + 4 burgers → burger eruit (2 vs 3) → inf eruit (1 vs 3) → geen winnaar
   assert.equal(r.s.pendingWinner, null);
   r.act("p0", "next");
   assert.equal(r.s.phase, "hints");
@@ -711,30 +700,61 @@ test("normalize & levenshtein", () => {
 });
 
 // ---------- Vertrekken tijdens het spel ----------
-test("leave tijdens eigen beurt → beurt schuift door", () => {
-  const r = room(5, { seed: 81, settings: { infiltrants: 1 } });
-  r.start(); r.revealAll();
-  r.act(r.s.turn.pid, "hint", { text: "a" });
+// Zoek een seed waarvoor cond(r) geldt (spellen zijn deterministisch per seed)
+function findRoom(n, opts, setup, cond) {
+  for (let seed = 1; seed < 500; seed++) {
+    const r = room(n, Object.assign({ seed }, opts));
+    setup(r);
+    if (cond(r)) return r;
+  }
+  throw new Error("geen geschikte seed");
+}
+
+test("leave tijdens eigen beurt → beurt schuift door (burger)", () => {
+  const r = findRoom(5, {}, (r) => { r.start(); r.revealAll(); r.act(r.s.turn.pid, "hint", { text: "a" }); },
+    (r) => r.s.turn.pid !== "p0" && r.s.roles[r.s.turn.pid] === "burger");
   const cur = r.s.turn.pid;
-  const expectNext = r.s.order[2];
-  if (cur === "p0") return; // host kan niet vertrekken; seed kiest anders
-  const isInf = r.s.roles[cur] === "infiltrant";
+  assert.equal(cur, r.s.order[1]);
   r.act(cur, "leave");
   assert.equal(r.p(cur).left, true);
   assert.equal(r.p(cur).alive, false);
-  if (isInf) assert.equal(r.s.phase, "over");
-  else assert.equal(r.s.turn.pid, expectNext);
+  assert.equal(r.s.phase, "hints");
+  assert.equal(r.s.turn.pid, r.s.order[2]);
+  // rest van de ronde: vertrekker wordt overgeslagen
+  const spoken = [];
+  while (r.s.phase === "hints") { spoken.push(r.s.turn.pid); r.act(r.s.turn.pid, "hint", { text: "b" }); }
+  assert.deepEqual(spoken, r.s.order.slice(2));
 });
 
 test("leave van de infiltrant tijdens hints → burgers winnen direct", () => {
-  const r = room(4, { seed: 82 });
-  r.start(); r.revealAll();
-  let inf = r.infs()[0];
-  if (inf === "p0") { r.act("p0", "kick", { target: "p1" }); return; }
+  const r = findRoom(4, {}, (r) => { r.start(); r.revealAll(); }, (r) => r.infs()[0] !== "p0");
+  const inf = r.infs()[0];
   r.act(inf, "leave");
   assert.equal(r.s.phase, "over");
   assert.equal(r.s.result.winner, "burgers");
   assert.equal(r.s.result.delta[inf], 0);
+  for (const b of r.burgers()) assert.equal(r.s.result.delta[b], 2);
+});
+
+test("leave van een burger bij 3 spelers → infiltrant wint direct", () => {
+  const r = findRoom(3, {}, (r) => { r.start(); r.revealAll(); }, (r) => r.infs()[0] !== "p0");
+  const b = r.burgers().find((p) => p !== "p0");
+  r.act(b, "leave");
+  assert.equal(r.s.phase, "over");
+  assert.equal(r.s.result.winner, "infiltranten");
+  assert.equal(r.s.result.delta[b], 0);
+  assert.equal(r.s.result.delta[r.infs()[0]], 4);
+});
+
+test("kick tijdens elim herberekent de winnaar", () => {
+  const r = findRoom(4, {}, (r) => { r.start(); r.revealAll(); r.hintsAll(); r.voteOut(r.burgers().find((p) => p !== "p0")); },
+    (r) => r.s.phase === "elim" && r.infs()[0] !== "p0");
+  assert.equal(r.s.pendingWinner, null);
+  r.act("p0", "kick", { target: r.infs()[0] });
+  assert.equal(r.s.phase, "elim");
+  assert.equal(r.s.pendingWinner, "burgers");
+  r.act("p0", "next");
+  assert.equal(r.s.result.winner, "burgers");
 });
 
 test("leave tijdens stemmen maakt stemming compleet; stemmen op vertrekker vervallen", () => {
@@ -791,8 +811,9 @@ test("leave tijdens reveal; rejoin wist left (blijft uitgeschakeld)", () => {
 });
 
 test("leave van de gokker → gok fout, naar elim", () => {
-  const { r, inf } = blindToGuess(140);
-  if (inf === "p0") return;
+  let seed = 140, g;
+  while ((g = blindToGuess(seed)).inf === "p0") seed++;
+  const { r, inf } = g;
   r.act(inf, "leave");
   assert.equal(r.s.phase, "elim");
   assert.equal(r.s.guess.correct, false);
@@ -934,6 +955,7 @@ test("simulatie: 300 random spellen met legale en illegale acties", () => {
   const TYPES = ["join", "profile", "leave", "kick", "settings", "start", "revealed", "hint", "skip", "forceVote", "vote", "closeVote", "guess", "next", "rare"];
   const HINTS = ["rood", "groot", "lekker", "warm", "snel", "", "hmm", "zeker weten"];
   let finished = 0;
+  const seen = { revote: 0, doubleTie: 0, guess: 0, correctGuess: 0, burgers: 0, infiltranten: 0, blindWins: 0, woordWins: 0, leftPlayers: 0 };
   for (let g = 0; g < 300; g++) {
     const rnd = mulberry32(1000 + g);
     const pick = (a) => a[Math.floor(rnd() * a.length)];
@@ -955,11 +977,10 @@ test("simulatie: 300 random spellen met legale en illegale acties", () => {
         // Willekeurige (meestal illegale) envelope
         const pid = pick([...pids, "x" + Math.floor(rnd() * 3)]);
         const t = pick(TYPES);
-        const d = { target: pick([...pids, "zz", pid]), text: pick([...HINTS, s.words.burger]), name: "N", mode: pick(["woord", "blind", "x"]) };
+        const d = { target: pick([...pids, "zz", pid]), text: pick(HINTS), name: "N", mode: pick(["woord", "blind", "x"]) };
         const seq = (s.acks[pid] || 0) + pick([1, 1, 1, 0, 2, -1]);
         const key = rnd() < 0.1 ? "fout" : keyOf(pid);
         if (t === "leave" || t === "kick") { if (rnd() < 0.7) continue; }
-        if (t === "guess" && s.phase !== "guess") d.text = "nope";
         if (t === "join" && pid.startsWith("x") && r.s.players.length >= 12) continue;
         const next = E.reduce(s, { pid, key, seq, t, d }, r.ctx());
         if (next !== s) {
@@ -968,8 +989,8 @@ test("simulatie: 300 random spellen met legale en illegale acties", () => {
         }
         r.s = next;
       } else if (roll < 0.27 && s.phase !== "over") {
-        const victim = pick(r.alive().filter((p) => p !== "p0"));
-        if (victim) r.act(victim, rnd() < 0.5 ? "leave" : "join");
+        const victim = pick(pids.filter((p) => p !== "p0" && !s.removed.includes(p)));
+        if (victim) r.act(victim, r.p(victim) && r.p(victim).left ? "join" : rnd() < 0.5 ? "leave" : "profile", { name: "Z" });
       } else {
         // Legale voortgang
         const alive = r.alive();
@@ -999,22 +1020,37 @@ test("simulatie: 300 random spellen met legale en illegale acties", () => {
       if (st.phase !== "over") {
         const json = JSON.stringify(pub);
         const leakOk = st.guess && st.guess.correct; // juiste gok staat publiek in guess.text
-        for (const sec of secrets) if (!leakOk || !sec.includes(st.words.burger)) assert.ok(!json.includes(sec), "lek: " + sec + " in " + st.phase);
+        for (const sec of secrets) {
+          if (leakOk && sec === JSON.stringify(st.words.burger)) continue;
+          assert.ok(!json.includes(sec), "lek: " + sec + " in " + st.phase);
+        }
         assert.equal(pub.result, null);
       }
       assert.ok(Object.values(st.scores).every((x) => Number.isInteger(x) && x >= 0), "scores ≥ 0");
       if (st.phase === "hints") assert.ok(r.alive().includes(st.turn.pid), "beurt bij levende speler");
       if (st.phase === "vote") for (const v of st.voted) assert.ok(r.alive().includes(v));
       assert.ok(st.players.filter((p) => !p.left).length <= 12);
+      if (st !== s) {
+        if (st.revote && !s.revote) seen.revote++;
+        if (st.lastVote && st.lastVote !== s.lastVote && st.lastVote.tie && st.lastVote.revote && st.phase === "elim" && s.phase === "vote") seen.doubleTie++;
+        if (st.phase === "guess" && s.phase !== "guess") seen.guess++;
+        if (st.guess && st.guess.correct && !(s.guess && s.guess.correct)) seen.correctGuess++;
+      }
     }
     assert.equal(r.s.phase, "over", `spel ${g} eindigt niet`);
     const res = r.s.result;
     assert.ok(["burgers", "infiltranten"].includes(res.winner));
     assert.ok(Object.values(res.delta).every((x) => x >= 0));
+    for (const pid of Object.keys(res.delta)) assert.ok(r.s.scores[pid] >= res.delta[pid]);
+    seen[res.winner]++;
+    seen[r.s.settings.mode + "Wins"]++;
+    if (r.s.players.some((p) => p.left)) seen.leftPlayers++;
     // Na afloop: volgende potje kan
     r.act("p0", "next");
     assert.equal(r.s.phase, "lobby");
     finished++;
   }
   assert.equal(finished, 300);
+  // De simulatie moet de interessante paden ook echt raken
+  for (const k of Object.keys(seen)) assert.ok(seen[k] > 0, "simulatie raakt " + k + " niet: " + JSON.stringify(seen));
 });
