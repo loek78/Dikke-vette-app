@@ -323,7 +323,7 @@
     const planks = Array.from({ length: 9 }, () => ({ w: 0.09 + drng() * 0.06, t: drng() }));
 
     // --- Layout ---
-    let W = 0, H = 0, dpr = 1, L = null, bg = null, frost = null, logImg = null, fcv = null, fg = null, vign = null;
+    let W = 0, H = 0, dpr = 1, L = null, bg = null, frost = null, logImg = null, fcv = null, fg = null, glowImg = null;
     // gloeiend kooltje als sprite (scheelt tientallen gradients per frame)
     const coalImg = document.createElement("canvas");
     coalImg.width = coalImg.height = 48;
@@ -351,7 +351,7 @@
       L.railY = wBot - L.wh * 0.2;
       msg.style.top = Math.round(bot + Math.min(64, H * 0.075)) + "px";
       bangEl.style.top = Math.round(wTop + L.wh * 0.5 - 56) + "px";
-      bg = renderBg(); frost = renderFrost(); logImg = renderLog(); vign = renderVignette();
+      bg = renderBg(); frost = renderFrost(); logImg = renderLog(); glowImg = renderGlow();
       // vlammen op lage resolutie tekenen en opgeschaald neerzetten = zachte, gloeiende randen
       const fx0 = L.cx - L.wht - 4, fy0 = L.wTop - 4, fw = L.wht * 2 + 8, fh = L.wh + L.sag * 2 + 8;
       fcv = document.createElement("canvas"); fcv.width = Math.ceil(fw / FS); fcv.height = Math.ceil(fh / FS);
@@ -430,6 +430,10 @@
       const spec = x.createLinearGradient(cx - half * 0.62, 0, cx - half * 0.38, 0);
       spec.addColorStop(0, "rgba(255,231,184,0)"); spec.addColorStop(0.5, "rgba(255,231,184,.05)"); spec.addColorStop(1, "rgba(255,231,184,0)");
       x.fillStyle = spec; x.fillRect(cx - half * 0.62, top + capR, half * 0.24, bot - top - capR);
+      // donkere rand (statisch ingebakken)
+      const vg = x.createRadialGradient(W / 2, H * 0.45, Math.min(W, H) * 0.4, W / 2, H * 0.45, Math.max(W, H) * 0.78);
+      vg.addColorStop(0, "rgba(4,3,2,0)"); vg.addColorStop(1, "rgba(4,3,2,.7)");
+      x.fillStyle = vg; x.fillRect(0, 0, W, H);
       // venster-sponning (donkere rand)
       windowPath(x, -5); x.fillStyle = "#050303"; x.fill();
       return o;
@@ -474,12 +478,15 @@
       return o;
     }
 
-    // Donkere rand over alles (statisch).
-    function renderVignette() {
-      const [o, x] = off(W + 40, H + 40);
-      const vg = x.createRadialGradient(W / 2 + 20, H * 0.45 + 20, Math.min(W, H) * 0.4, W / 2 + 20, H * 0.45 + 20, Math.max(W, H) * 0.78);
-      vg.addColorStop(0, "rgba(4,3,2,0)"); vg.addColorStop(1, "rgba(4,3,2,.7)");
-      x.fillStyle = vg; x.fillRect(0, 0, W + 40, H + 40);
+    // Warm vensterlicht op muur, kachel en vloer: één zachte sprite op lage resolutie, sterkte via globalAlpha.
+    function renderGlow() {
+      const o = document.createElement("canvas"), sc = 0.25;
+      o.width = Math.max(1, Math.round(W * sc)); o.height = Math.max(1, Math.round(H * sc));
+      const x = o.getContext("2d"); x.scale(sc, sc);
+      const gx = L.cx, gy = L.wTop + L.wh * 0.55;
+      const gl = x.createRadialGradient(gx, gy, L.wht * 0.6, gx, gy, Math.max(W, H) * 0.62);
+      gl.addColorStop(0, "rgba(255,120,40,.3)"); gl.addColorStop(0.5, "rgba(232,64,28,.1)"); gl.addColorStop(1, "rgba(232,64,28,0)");
+      x.fillStyle = gl; x.fillRect(0, 0, W, H);
       return o;
     }
 
@@ -711,10 +718,8 @@
       g.drawImage(bg, 0, 0, W, H);
       // warm licht van het venster op muur, kachel en vloer
       const k = Math.min(1.8, fireK + flare);
-      g.save(); g.globalCompositeOperation = "lighter";
-      const glow = g.createRadialGradient(L.cx, L.wTop + L.wh * 0.55, L.wht * 0.6, L.cx, L.wTop + L.wh * 0.55, Math.max(W, H) * (0.45 + 0.2 * k));
-      glow.addColorStop(0, "rgba(255,120,40," + 0.22 * k + ")"); glow.addColorStop(0.5, "rgba(232,64,28," + 0.07 * k + ")"); glow.addColorStop(1, "rgba(232,64,28,0)");
-      g.fillStyle = glow; g.fillRect(-20, -20, W + 40, H + 40);
+      g.save(); g.globalCompositeOperation = "lighter"; g.globalAlpha = Math.min(1, 0.75 * k);
+      g.drawImage(glowImg, -20, -20, W + 40, H + 40);
       g.restore();
       drawFire(st);
       drawParts(dt);
@@ -732,7 +737,6 @@
         g.fillStyle = fl; g.fillRect(-20, -20, W + 40, H + 40);
         g.restore();
       }
-      g.drawImage(vign, -20, -20, W + 40, H + 40);
     }
 
     // --- Rondes ---
