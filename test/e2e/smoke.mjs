@@ -41,7 +41,8 @@ export default async function smoke(env) {
   await step("home: tegels, geen horizontale scroll (360/390/430 px, ook tijdens het wiebelende logo)", async () => {
     await p.goto(env.origin);
     await p.page.waitForSelector('[data-screen="home"].active .t-online');
-    eq(await p.page.$$eval(".tiles .tile", (t) => t.length), 6, "6 tegels (Infiltrant + 5 tools)");
+    eq(await p.page.$$eval(".tiles .tile", (t) => t.length), 7, "7 tegels (Speel samen + Kerstdroom + 5 tools)");
+    eq(await p.page.getAttribute(".tiles a.t-kerst", "href"), "kerst/", "Kerstdroom-tegel linkt naar kerst/");
     eq(await p.page.getAttribute(".tiles .tile:first-child", "data-go"), "online", "Infiltrant-tegel bovenaan");
     for (const width of [360, 390, 430]) {
       await p.page.setViewportSize({ width, height: 740 });
