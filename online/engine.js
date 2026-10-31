@@ -20,8 +20,22 @@
  *   DVInfiltrant.levenshtein(a, b), DVInfiltrant.effectiveInfiltrants(setting, n)
  *   DVInfiltrant.DEFAULT_SETTINGS, MIN_PLAYERS (3), MAX_PLAYERS (12)
  *
- * Word pairs (ctx.words) may be objects { a, b, cat|c|category, id? } or arrays [a, b, cat].
- * A pair's identity for `usedPairs` is `id` when present, else "a|b".
+ * Word pairs (ctx.words, falls back to global DV_WORDPAIRS) may be objects { a, b, c|cat|category, id? } or
+ * arrays [a, b, cat]. A pair's identity for `usedPairs` is `id` when present, else "a|b".
+ * `category` (privateView, result) is the pair's category id, i.e. a key of DV_WORDCATS (UI maps it to a label).
+ * `settings.categories` is filtered to category ids that occur in ctx.words.
+ *
+ * Lifecycle details
+ *   - lobby leave/kick removes the player (and score) entirely; in game the player stays with left:true, alive:false.
+ *   - players with left:true are purged on `start` and on `next` (over → lobby); spectators are promoted on `start`.
+ *   - a known pid that `join`s again gets its profile updated and `left` cleared (in game it stays alive:false,
+ *     but sees its word again); a known pid missing from `players` is re-added (spectator when a game runs).
+ *   - leave during a vote: the leaver's vote is dropped, votes ON the leaver are dropped (those voters may vote again),
+ *     the leaver is removed from `candidates`. A vote completes when every alive player with a valid target voted.
+ *   - leave can end the game immediately (reveal/hints/vote → "over") or change `pendingWinner` (guess/elim).
+ *     If the guesser leaves, the guess counts as wrong.
+ *   - the first tie of a vote sets `revote:true` + `candidates` and does NOT touch `lastVote`.
+ *   - `next` from elim: new round (round++, guess cleared, hints kept — they carry `round`).
  *
  * Internal (secret) state fields, never published: keys, roles, words { burger, infiltrant, category, pairId },
  * votes { voter: target }, usedPairs, pendingWinner, starter, gameDelta.
