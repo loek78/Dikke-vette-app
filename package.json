@@ -1,0 +1,15 @@
+{
+  "name": "dikke-vette-app",
+  "private": true,
+  "version": "2.0.0",
+  "description": "Partytools + online multiplayer (Infiltrant) voor op je telefoon. De app zelf heeft geen build nodig; deze dependencies zijn alleen voor lokaal testen.",
+  "scripts": {
+    "dev": "node tools/dev.mjs",
+    "test": "node --test test/"
+  },
+  "devDependencies": {
+    "aedes": "^0.51.3",
+    "mqtt": "^5.16.1",
+    "ws": "^8.18.0"
+  }
+}

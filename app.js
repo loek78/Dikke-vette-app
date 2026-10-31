@@ -508,5 +508,9 @@
     addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
   }
 
-  show(location.hash.slice(1));
+  // Gedeelde helpers voor de online-modules (online/ui.js).
+  window.DVA = { $, $$, COLORS, rand, shuffle, store, beep, fanfare, buzz, toast, confetti, show, hooks, screens };
+
+  // Pas tonen als alle scripts (ook online/*) geladen zijn en hun hooks hebben geregistreerd.
+  addEventListener("DOMContentLoaded", () => show(location.hash.slice(1)));
 })();
