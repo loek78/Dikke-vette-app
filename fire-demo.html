@@ -57,12 +57,14 @@
   const solo = /[?&]solo\b/.test(location.search);
   if (solo) document.body.classList.add("solo");
   const bg = DVFire.embers(document.getElementById("bg"), { density: 0.6 });
-  const hero = DVFire.flame(document.getElementById("hero"), { intensity: 0.7 });
+  const i0 = +(new URLSearchParams(location.search).get("i") ?? 0.7);
+  const hero = DVFire.flame(document.getElementById("hero"), { intensity: i0 });
   const cells = solo ? [] : [...document.querySelectorAll("canvas[data-i]")].map((c) =>
     DVFire.flame(c, { intensity: +c.dataset.i, logs: !("nologs" in c.dataset) }));
   const int = document.getElementById("int"), intv = document.getElementById("intv");
   int.oninput = () => { hero.setIntensity(+int.value); intv.textContent = (+int.value).toFixed(2); };
   document.getElementById("burst").onclick = () => { hero.burst(); cells.forEach((f) => f.burst()); };
+  int.value = i0; intv.textContent = i0.toFixed(2);
   window.demo = { bg, hero, cells };
   // eenvoudige fps-meter
   const fpsEl = document.getElementById("fps");

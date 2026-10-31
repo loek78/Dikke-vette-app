@@ -41,21 +41,23 @@
       g.addColorStop(.5, `rgba(${rgb},.18)`); g.addColorStop(1, `rgba(${rgb},0)`);
       x.fillStyle = g; x.fillRect(0, 0, 64, 64); return c;
     };
-    const tongue = (r, g, b) => { // vlamtong: ronde voet, spitse punt; vorm zit in alpha
-      const w = 48, h = 112, c = mk(w, h), x = c.getContext("2d"), im = x.createImageData(w, h), d = im.data;
+    // vlamtong: ronde voet → (gebogen) staart; tail = hoe snel hij versmalt, bend = kromming van de staart
+    const tongue = (r, g, b, tail, bend) => {
+      const w = 48, h = 128, c = mk(w, h), x = c.getContext("2d"), im = x.createImageData(w, h), d = im.data;
       for (let py = 0; py < h; py++) {
-        const v = 1 - (py + .5) / h, hw = v < .22 ? M.sqrt(1 - ((.22 - v) / .22) ** 2) : ((1 - v) / .78) ** 1.35;
-        const k = ss(0, .25, v) * (1 - .45 * v);
+        const v = 1 - (py + .5) / h, hw = .92 * (v < .25 ? M.sqrt(1 - ((.25 - v) / .25) ** 2) : ((1 - v) / .75) ** tail);
+        const k = ss(0, .2, v) * (1 - v) ** .5, cc = bend * v * v;
         for (let px = 0; px < w; px++) {
           const i = (py * w + px) * 4;
           d[i] = r; d[i + 1] = g; d[i + 2] = b;
-          d[i + 3] = 255 * k * (1 - ss(.35, 1, M.abs((px + .5) / w * 2 - 1) / (hw + 1e-3)));
+          d[i + 3] = 255 * k * (1 - ss(.25, 1, M.abs((px + .5) / w * 2 - 1 - cc) / (hw + 1e-3)));
         }
       }
       x.putImageData(im, 0, 0); return c;
     };
     return (SP = {
-      t: tongue(255, 92, 22), th: tongue(255, 168, 70), tb: tongue(70, 125, 255),
+      lick: tongue(255, 104, 26, 1.9, .45), hot: tongue(255, 176, 84, 1.5, .25), body: tongue(255, 66, 18, 1.1, 0),
+      blue: tongue(84, 118, 255, 1.1, 0),
       amb: glow("255,128,40"), core: glow("255,150,50"), ember: glow("255,78,18"),
       s: [glow("255,190,90", 1), glow("255,122,30", 1), glow("228,58,18", 1)],
     });
@@ -102,17 +104,17 @@
   function flame(cv, o = {}) {
     const sp = sprites(), ctx = cv.getContext("2d"), fb = mk(2, 2), fc = fb.getContext("2d"), bed = mk(2, 2), bc = bed.getContext("2d");
     const sparks = o.embers !== false, blue = o.blueTips !== false, logs = o.logs !== false;
-    const NT = 26, tAge = F32(NT), tLife = F32(NT), tX = F32(NT), tH = F32(NT), tW = F32(NT), tPh = F32(NT), tHot = new Uint8Array(NT);
-    const NS = 96, sX = F32(NS), sY = F32(NS), sVX = F32(NS), sVY = F32(NS), sL = F32(NS), sM = F32(NS), sR = F32(NS), hot = F32(16);
+    const NT = 34, tAge = F32(NT), tLife = F32(NT), tX = F32(NT), tH = F32(NT), tW = F32(NT), tPh = F32(NT), tHot = new Uint8Array(NT);
+    const NS = 96, sX = F32(NS), sY = F32(NS), sVX = F32(NS), sVY = F32(NS), sL = F32(NS), sM = F32(NS), sR = F32(NS), hot = F32(24);
     let W = 0, H = 0, S = 0, cx = 0, gy = 0, y0 = 0, q = 1, fbX = 0, fbY = 0, bedX = 0, bedY = 0;
     let tgt = clamp(o.intensity == null ? .7 : +o.intensity || 0, 0, 1), cur = tgt, I = cur, flare = 0, time = 0, acc = 0, warmed = false;
 
     function respawn(j) {
       const x = bell(); tX[j] = x; tAge[j] = 0;
-      tLife[j] = (.4 + .7 * R()) * (1.6 - .6 * M.min(I, 1));
-      tHot[j] = M.abs(x) < .5 && R() < .5 ? 1 : 0;
-      tH[j] = (.45 + .55 * R()) * (1 - .55 * x * x) * (tHot[j] ? .75 : 1);
-      tW[j] = .7 + .6 * R(); tPh[j] = R() * 99;
+      tLife[j] = (.35 + .6 * R()) * (1.5 - .5 * M.min(I, 1));
+      tHot[j] = M.abs(x) < .45 && R() < .45 ? 1 : 0;
+      tH[j] = (.4 + .6 * R()) * (1 - .6 * x * x) * (tHot[j] ? .6 : 1);
+      tW[j] = (.7 + .6 * R()) * (R() < .5 ? -1 : 1); tPh[j] = R() * 99;
     }
     function spark(boost) {
       for (let k = 0; k < NS; k++) if (sL[k] <= 0) {
@@ -128,7 +130,7 @@
       cur += (tgt - cur) * (1 - M.exp(-dt * 1.6));
       flare *= M.exp(-dt * 1.5);
       I = cur + flare * .6;
-      const n = M.round(3 + 20 * M.min(I, 1.15));
+      const n = M.round(4 + 26 * M.min(I, 1.15));
       for (let j = 0; j < NT; j++) {
         if (tLife[j] > 0) { if ((tAge[j] += dt) >= tLife[j]) j < n ? respawn(j) : (tLife[j] = 0); }
         else if (j < n) { respawn(j); tAge[j] = R() * tLife[j] * .6; }
@@ -144,110 +146,119 @@
     function warm() { if (!warmed && S) { warmed = true; for (let k = 0; k < 60; k++) step(1 / 30); } }
 
     function size(w, h) {
-      W = w; H = h; S = M.min(W * 1.05, H / 1.12); cx = W / 2; gy = H - S * .045; y0 = gy - S * .07;
+      W = w; H = h; S = M.min(W * 1.05, H / 1.1); cx = W / 2; gy = H - S * .06; y0 = gy - S * .06;
       const bw = S * 1.1, top = M.max(0, y0 - S * 1.02);
       q = M.min(.5, 260 / bw); fb.width = M.ceil(bw * q); fb.height = M.ceil((y0 + S * .02 - top) * q); fbX = cx - bw / 2; fbY = top;
       buildBed(); sL.fill(0); warm();
     }
 
     function buildBed() { // gloeiend kolenbed + verkoolde blokken, één keer per formaat
-      const c = bc, rnd = seeded(7), bw = M.ceil(S * 1.1), bh = M.ceil(S * .36), ox = bw / 2, oy = bh - S * .04;
+      const c = bc, rnd = seeded(7), bw = M.ceil(S * .9), bh = M.ceil(S * .3), ox = bw / 2, oy = bh - S * .05;
       bed.width = bw; bed.height = bh; bedX = cx - ox; bedY = gy - oy;
-      c.save(); c.translate(ox, oy - S * .02); c.scale(1, .26);
-      let g = c.createRadialGradient(0, 0, 0, 0, 0, S * .38);
-      g.addColorStop(0, "#ffa040"); g.addColorStop(.4, "#e2501a"); g.addColorStop(.75, "#5a1606"); g.addColorStop(1, "rgba(40,10,4,0)");
+      c.save(); c.translate(ox, oy - S * .025); c.scale(1, .2);
+      let g = c.createRadialGradient(0, 0, 0, 0, 0, S * .36);
+      g.addColorStop(0, "#ff9a3a"); g.addColorStop(.35, "#e8521a"); g.addColorStop(.7, "#6a1a06"); g.addColorStop(1, "rgba(50,12,4,0)");
       c.fillStyle = g; c.fillRect(-S * .4, -S * .4, S * .8, S * .8); c.restore();
       const co = [];
-      for (let k = 0; k < 70; k++) {
-        const u = rnd() * 2 - 1;
-        co.push([ox + u * S * .34, oy - rnd() * (1 - u * u) ** .6 * S * .08, S * (.016 + .02 * rnd()) * (1 - .3 * u * u), rnd()]);
+      for (let k = 0; k < 120; k++) {
+        const u = rnd() * 2 - 1, y = rnd();
+        co.push([ox + u * S * .3, oy - y * (1 - u * u) ** .6 * S * .065, S * (.011 + .014 * rnd()) * (1 - .3 * u * u), rnd() < .2 + .45 * (1 - M.abs(u)) * y]);
       }
       co.sort((a, b) => a[1] - b[1]);
-      const coal = ([x, y, r, s]) => {
-        c.save(); c.translate(x, y); c.rotate(s * 9); c.scale(1, .7); c.beginPath();
-        for (let i = 0; i < 7; i++) { const a = i / 7 * TAU, rr = r * (.75 + .35 * rnd()); c.lineTo(M.cos(a) * rr, M.sin(a) * rr); }
-        const gg = c.createRadialGradient(0, -r * .2, 0, 0, 0, r * 1.1);
-        if (s < .35) gg.addColorStop(0, "#ffb24e"), gg.addColorStop(.45, "#e04612"), gg.addColorStop(1, "#3c0f05");
-        else gg.addColorStop(0, "#3c2518"), gg.addColorStop(1, "#0b0604");
+      const coal = ([x, y, r, h]) => {
+        c.save(); c.translate(x, y); c.scale(1, .72); c.beginPath();
+        for (let i = 0, a0 = rnd() * TAU; i < 6; i++) { const a = a0 + i / 6 * TAU, rr = r * (.7 + .4 * rnd()); c.lineTo(M.cos(a) * rr, M.sin(a) * rr); }
+        const gg = c.createRadialGradient(0, -r * .25, 0, 0, 0, r * 1.1);
+        if (h) gg.addColorStop(0, "#ffc46a"), gg.addColorStop(.35, "#f2621c"), gg.addColorStop(.75, "#9a2408"), gg.addColorStop(1, "#2a0a04");
+        else gg.addColorStop(0, "#36200f"), gg.addColorStop(.6, "#140a06"), gg.addColorStop(1, "#070302");
         c.fillStyle = gg; c.fill(); c.restore();
       };
+      // verkoold blok: donker silhouet, gloeiende scheurtjes aan de vuurkant, gezaagde kop
       const log = (x, y, dir, ang, L, T) => {
         c.save(); c.translate(x, y); c.scale(dir, 1); c.rotate(ang);
+        c.beginPath(); c.moveTo(0, T / 2);
+        for (let i = 0; i <= 10; i++) c.lineTo(L * i / 10, -T / 2 + T * .07 * (rnd() - .5));
+        c.ellipse(L, 0, T * .25, T / 2, 0, -M.PI / 2, M.PI / 2); c.closePath();
         g = c.createLinearGradient(0, -T / 2, 0, T / 2);
-        g.addColorStop(0, "#6a4326"); g.addColorStop(.3, "#33200f"); g.addColorStop(1, "#090403");
-        c.fillStyle = g; c.beginPath(); c.moveTo(0, -T / 2); c.lineTo(L, -T / 2); c.ellipse(L, 0, T * .3, T / 2, 0, -M.PI / 2, M.PI / 2); c.lineTo(0, T / 2); c.fill();
-        c.strokeStyle = "rgba(0,0,0,.4)"; c.lineWidth = T * .05;
-        for (let i = 1; i < 5; i++) { const yy = -T / 2 + T * i / 5; c.beginPath(); c.moveTo(T * .2, yy); c.quadraticCurveTo(L * .5, yy + T * .12 * (rnd() - .5), L, yy); c.stroke(); }
-        c.shadowColor = "#ff4a0a"; c.shadowBlur = T * .3; c.strokeStyle = "#ff9a3a"; c.lineWidth = T * .04;
-        for (let i = 0; i < 10; i++) {
-          const xx = L * (.45 + .5 * rnd()), yy = T * (rnd() - .3) * .8;
-          c.beginPath(); c.moveTo(xx, yy); c.lineTo(xx + T * (.1 + .3 * rnd()), yy + T * .15 * (rnd() - .5)); c.stroke();
+        g.addColorStop(0, "#5a3018"); g.addColorStop(.18, "#2a160b"); g.addColorStop(.6, "#120905"); g.addColorStop(1, "#060302");
+        c.fillStyle = g; c.fill(); c.clip();
+        c.lineWidth = T * .04;
+        for (let i = 0; i < 26; i++) { // krokodillenhuid van houtskool
+          const xx = L * (.08 + .92 * rnd()), yy = T * (rnd() - .5), heat = ss(.35, 1, xx / L);
+          c.strokeStyle = heat > .2 && rnd() < .7 ? `rgba(255,${110 + 60 * rnd() | 0},40,${.35 + .5 * heat})` : "rgba(0,0,0,.6)";
+          c.shadowColor = "#ff5010"; c.shadowBlur = heat > .2 ? T * .25 : 0;
+          c.beginPath(); c.moveTo(xx, yy); c.lineTo(xx + T * (.12 + .3 * rnd()), yy + T * .1 * (rnd() - .5));
+          c.lineTo(xx + T * (.1 + .3 * rnd()), yy + T * (.1 + .15 * rnd())); c.stroke();
         }
-        c.shadowBlur = 0; c.scale(.3, 1);
+        c.restore(); c.save(); c.translate(x, y); c.scale(dir, 1); c.rotate(ang); c.scale(.28, 1);
         g = c.createRadialGradient(0, 0, 0, 0, 0, T / 2);
-        g.addColorStop(0, "#b07c4c"); g.addColorStop(.55, "#82542f"); g.addColorStop(.82, "#4a2c18"); g.addColorStop(1, "#140a05");
+        g.addColorStop(0, "#6e4426"); g.addColorStop(.5, "#4c2c16"); g.addColorStop(.8, "#2a170b"); g.addColorStop(.93, "#ff7a2a"); g.addColorStop(1, "#200c05");
         c.fillStyle = g; c.beginPath(); c.arc(0, 0, T / 2, 0, TAU); c.fill();
-        c.lineWidth = T * .035; c.strokeStyle = "rgba(60,30,14,.55)";
-        c.beginPath(); c.arc(0, 0, T * .3, 0, TAU); c.stroke(); c.beginPath(); c.arc(0, 0, T * .15, 0, TAU); c.stroke();
+        c.lineWidth = T * .05; c.strokeStyle = "rgba(20,10,5,.5)"; c.beginPath(); c.arc(0, 0, T * .27, 0, TAU); c.stroke();
         c.restore();
       };
       let k = 0;
-      for (; k < co.length && co[k][1] < oy - S * .045; k++) coal(co[k]);
-      if (logs) { log(ox - S * .4, oy - S * .015, 1, -.2, S * .7, S * .1); log(ox + S * .4, oy - S * .012, -1, -.18, S * .68, S * .095); }
+      for (; k < co.length && co[k][1] < oy - S * .035; k++) coal(co[k]);
+      if (logs) { log(ox - S * .34, oy - S * .012, 1, -.17, S * .58, S * .085); log(ox + S * .34, oy - S * .008, -1, -.15, S * .56, S * .08); }
       for (; k < co.length; k++) coal(co[k]);
-      for (let i = 0; i < 16; i += 2) { hot[i] = bedX + ox + (rnd() * 2 - 1) * S * .28; hot[i + 1] = bedY + oy - rnd() * S * .05; }
+      for (let i = 0; i < 24; i += 2) { hot[i] = bedX + ox + (rnd() * 2 - 1) * S * .26; hot[i + 1] = bedY + oy - rnd() * S * .045; }
     }
 
     function draw() {
       if (!S) return;
       const c = ctx, f = fc, fw = fb.width, fh = fb.height, Ic = M.min(I, 1.25), pres = .3 + .7 * ss(0, .25, Ic);
-      const fl = .82 + .36 * vn(time * 6.1) * vn(time * 2.3 + 40), FH = S * (.06 + .62 * Ic), hw = S * (.05 + .16 * Ic), tw = S * (.1 + .12 * Ic);
+      const fl = .8 + .4 * vn(time * 6.1) * vn(time * 2.3 + 40), FH = S * (.08 + .74 * Ic), hw = S * (.05 + .17 * Ic), tw = S * (.09 + .12 * Ic);
       c.setTransform(1, 0, 0, 1, 0, 0); c.globalAlpha = 1; c.globalCompositeOperation = "source-over"; c.clearRect(0, 0, W, H);
       c.globalCompositeOperation = "lighter";
-      // warm licht rondom
-      const gcy = y0 - FH * .3, rx = M.min(W / 2, S * 1.1), ry = M.min(gcy, H - gcy, S * .95);
-      c.globalAlpha = (.14 + .3 * Ic) * fl; c.drawImage(sp.amb, cx - rx, gcy - ry, rx * 2, ry * 2);
+      // warm licht rondom + gloed om de vlam
+      const gcy = y0 - FH * .35, rx = M.min(W / 2, S * 1.2), ry = M.min(gcy, H - gcy, S);
+      c.globalAlpha = (.16 + .34 * Ic) * fl; c.drawImage(sp.amb, cx - rx, gcy - ry, rx * 2, ry * 2);
+      c.globalAlpha = (.12 + .3 * Ic) * pres * fl; c.drawImage(sp.core, cx - hw * 3, y0 - FH * .85, hw * 6, FH * 1.1);
       // vlammen in een buffer op lagere resolutie
       f.setTransform(1, 0, 0, 1, 0, 0); f.globalAlpha = 1; f.globalCompositeOperation = "source-over"; f.clearRect(0, 0, fw, fh);
       f.globalCompositeOperation = "lighter";
-      f.globalAlpha = .55 * pres * fl;
-      f.drawImage(sp.core, (cx - hw * 1.6 - fbX) * q, (y0 - FH * .55 - fbY) * q, hw * 3.2 * q, FH * .75 * q);
+      for (let e = 0; e < 3; e++) { // omhulsel (rood) + hete kern (geel)
+        const h = FH * (e ? .95 - .4 * (e - 1) : .5) * (.85 + .3 * vn(time * 3.7 + e * 17)), w = hw * (e ? 2.7 - .5 * (e - 1) : 1.7);
+        f.globalAlpha = pres * (e ? .32 : .5) * fl;
+        f.setTransform(w * q / 48, 0, (vn(time * 1.4 + e * 9) - .5) * .25 * h * q / 128, h * q / 128, (cx - fbX) * q, (y0 - fbY) * q);
+        f.drawImage(e ? sp.body : sp.hot, -24, -128);
+      }
       for (let j = 0; j < NT; j++) {
         if (tLife[j] <= 0) continue;
-        const a = tAge[j] / tLife[j], gr = ss(0, .22, a), de = ss(.55, 1, a), al = pres * gr * (1 - de) * (tHot[j] ? .5 : .75);
+        const a = tAge[j] / tLife[j], gr = ss(0, .2, a), de = ss(.5, 1, a), al = pres * gr * (1 - de) * (tHot[j] ? .55 : .72);
         if (al < .01) continue;
-        const fk = .75 + .5 * vn(time * 3.3 + tPh[j]), h = FH * tH[j] * fk * (.45 + .55 * gr) * (1 - .45 * de);
-        const w = tw * tW[j] * (.6 + .4 * gr) * (1 - .35 * de), lean = (vn(time * 1.7 + tPh[j] * 3) - .5) * .55 - tX[j] * .25;
-        const sx = w * q / 48, sy = h * q / 112;
+        const fk = .7 + .6 * vn(time * 5 + tPh[j]), h = FH * tH[j] * fk * (.5 + .5 * gr) * (1 - .4 * de);
+        const w = tw * tW[j] * (.6 + .4 * gr) * (1 - .3 * de), lean = (vn(time * 2.6 + tPh[j] * 3) - .5) * .7 - tX[j] * .3, sy = h * q / 128;
         f.globalAlpha = al;
-        f.setTransform(sx, 0, -lean * sy, sy, (cx + tX[j] * hw - fbX) * q, (y0 - de * de * FH * tH[j] * .6 - fbY) * q);
-        f.drawImage(tHot[j] ? sp.th : sp.t, -24, -112);
+        f.setTransform(w * q / 48, 0, -lean * sy, sy, (cx + tX[j] * hw - fbX) * q, (y0 - de * de * h * .9 - fbY) * q);
+        f.drawImage(tHot[j] ? sp.hot : sp.lick, -24, -128);
       }
-      // buffer → canvas in horizontale stroken die golvend meebewegen (lekkende tongen)
+      // buffer → canvas in horizontale stroken die golvend meebewegen (likkende tongen)
       c.globalAlpha = 1;
-      const n = 24, sh = fh / n, iq = 1 / q;
+      const n = 32, sh = fh / n, iq = 1 / q;
       for (let k = n - 1, ob = 0; k >= 0; k--) {
-        const yT = fbY + k * sh * iq, hN = M.max(0, (y0 - yT) / S), amp = S * .045 * hN * M.sqrt(hN) * (.6 + .4 * Ic);
-        const ot = amp * ((vn(hN * 3.1 - time * 2.4) - .5) * 2 + vn(hN * 7.7 - time * 3.9 + 50) - .5);
+        const yT = fbY + k * sh * iq, hN = M.max(0, (y0 - yT) / S), amp = S * .07 * hN ** 1.3 * (.6 + .4 * Ic);
+        const ot = amp * ((vn(hN * 3.1 - time * 2.8) - .5) * 2 + (vn(hN * 8 - time * 5.3 + 50) - .5) * .9);
         c.setTransform(iq, 0, (ob - ot) / sh, iq, fbX + ot, yT);
         c.drawImage(fb, 0, k * sh, fw, sh, 0, 0, fw, sh);
         ob = ot;
       }
-      // kolenbed + blokken
+      // kolenbed + blokken, ademende gloed, vuurschijn
       c.setTransform(1, 0, 0, 1, 0, 0); c.globalCompositeOperation = "source-over"; c.drawImage(bed, bedX, bedY);
       c.globalCompositeOperation = "lighter";
-      for (let k = 0, r = S * .07; k < 16; k += 2) {
-        c.globalAlpha = .1 + .35 * vn(time * .8 + k * 5.3) ** 2;
-        c.drawImage(sp.ember, hot[k] - r, hot[k + 1] - r * .6, r * 2, r * 1.2);
+      for (let k = 0, r = S * .065; k < 24; k += 2) {
+        c.globalAlpha = (.08 + .4 * vn(time * .7 + k * 5.3) ** 2) * (1.2 - .4 * Ic);
+        c.drawImage(sp.ember, hot[k] - r, hot[k + 1] - r * .5, r * 2, r);
       }
-      c.globalAlpha = (.12 + .4 * Ic) * fl; c.drawImage(sp.core, cx - S * .32, y0 - S * .1, S * .64, S * .16);
+      c.globalAlpha = (.1 + .38 * Ic) * fl; c.drawImage(sp.core, cx - S * .3, y0 - S * .09, S * .6, S * .15);
       // blauwe voetjes
       if (blue) for (let j = 0; j < NT; j += 2) {
-        if (tLife[j] <= 0) continue;
-        const a = tAge[j] / tLife[j], al = ss(0, .2, a) * (1 - ss(.5, .9, a)) * (.35 + .25 * vn(time * 5 + j));
+        if (tLife[j] <= 0 || M.abs(tX[j]) > .8) continue;
+        const a = tAge[j] / tLife[j], al = ss(0, .25, a) * (1 - ss(.45, .85, a)) * (.2 + .25 * vn(time * 6 + j));
         if (al < .02) continue;
-        const h = S * (.035 + .05 * vn(time * 4 + tPh[j])), w = S * (.025 + .02 * tW[j]);
-        c.globalAlpha = al; c.setTransform(w / 48, 0, 0, h / 112, cx + tX[j] * hw * 1.15, y0 + S * .012); c.drawImage(sp.tb, -24, -112);
+        const h = S * (.026 + .03 * vn(time * 5 + tPh[j])), w = S * (.022 + .012 * M.abs(tW[j]));
+        c.globalAlpha = al; c.setTransform(w / 48, 0, (vn(time * 3 + j) - .5) * .4 * h / 128, h / 128, cx + tX[j] * hw * 1.1, y0 + S * .018);
+        c.drawImage(sp.blue, -24, -128);
       }
       // vonken, uitgerekt langs hun snelheid
       for (let k = 0; k < NS; k++) {
