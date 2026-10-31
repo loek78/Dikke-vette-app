@@ -174,7 +174,7 @@
   background:radial-gradient(circle at 50% 45%,rgba(6,7,11,.15),rgba(6,7,11,.6))}
 .bj .mini-countdown.pop{animation:bj-cd .7s ease-out}
 @keyframes bj-cd{0%{transform:scale(1.6);opacity:0}25%{transform:scale(1);opacity:1}100%{transform:scale(.92);opacity:.85}}
-.bj-res{gap:10px;background:radial-gradient(90% 60% at 50% 38%,rgba(60,24,10,.78),rgba(8,7,9,.92) 75%);
+.bj-res{gap:10px;background:radial-gradient(95% 62% at 50% 40%,rgba(60,24,10,.82),rgba(8,7,9,.9) 72%,rgba(8,7,9,.5));
   -webkit-backdrop-filter:blur(5px);backdrop-filter:blur(5px);animation:bj-fade .5s ease-out both}
 @keyframes bj-fade{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
 .bj-big{font-size:clamp(72px,24vw,108px);line-height:.9;margin:4px 0 0;
@@ -287,19 +287,19 @@
       dpr = Math.min(2, (typeof devicePixelRatio === "number" && devicePixelRatio) || 1);
       cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
       const cx = W / 2;
-      const horizon = H * 0.585, ground = H * 0.69;
-      const srx = Math.min(W * 0.22, 96), sry = srx * 0.28;
-      const stumpTop = ground - H * 0.035;
-      const lrx = Math.min(W * 0.1, 44), lry = lrx * 0.3, lh = Math.min(H * 0.13, 110);
+      const horizon = H * 0.57, ground = H * 0.68;
+      const srx = Math.min(W * 0.24, 104), sry = srx * 0.28;
+      const stumpTop = ground - H * 0.03;
+      const lrx = Math.min(W * 0.12, 52), lry = lrx * 0.3, lh = Math.min(H * 0.16, 130);
       const logTop = stumpTop - lh;
       const mR = Math.min(W * 0.37, H * 0.165, 150);
       const mY = Math.max(H * 0.255, 58 + mR + 18);
       const axeLen = Math.min(W * 0.31, 128), blade = axeLen * 0.3;
-      const pr = Math.max(13, Math.min(W / 26, 17));
+      const pr = Math.max(13, Math.min(W / 22, 19));
       const pileB = H - Math.max(12, H * 0.02), pileL = 16 + pr * 0.4, pileR = W - 16 - pr * 0.4;
       const perRow = Math.max(4, Math.floor((pileR - pileL) / (pr * 2)));
       L = { cx, horizon, ground, srx, sry, stumpTop, lrx, lry, lh, logTop, mR, mY, axeLen, blade, pr, pileB, pileL, pileR, perRow,
-        rowH: pr * 1.74, maxRows: Math.max(2, Math.floor((pileB - (ground + H * 0.07)) / (pr * 1.74))),
+        rowH: pr * 1.74, maxRows: Math.max(2, Math.min(5, Math.floor((pileB - (ground + H * 0.075)) / (pr * 1.74)))),
         lanX: cx - Math.min(W * 0.36, 160), lanY: ground - H * 0.17 };
       L.strike = { x: cx, y: logTop + 2 };
       L.pivS = { x: cx + axeLen, y: logTop + 2 - blade };
@@ -362,6 +362,8 @@
       // zachte sneeuwbulten
       x.fillStyle = "rgba(190,205,235,.06)";
       for (let i = 0; i < 6; i++) { x.beginPath(); x.ellipse((i + 0.5) / 6 * W, horizon + H * (0.03 + (i % 2) * 0.02), W * 0.2, H * 0.012, 0, 0, TAU); x.fill(); }
+      // glinsteringen in de sneeuw
+      for (let i = 0; i < 70; i++) { const gy = horizon + 4 + Math.pow(drng(), 0.8) * (H - horizon); x.fillStyle = "rgba(220,232,255," + (0.08 + drng() * 0.25) + ")"; x.fillRect(drng() * W, gy, 1.2, 1.2); }
       // voetsporen naar het huisje
       x.fillStyle = "rgba(8,10,16,.35)";
       for (let i = 0; i < 9; i++) { const k = i / 9, px = lerp(cx + W * 0.12, W * 0.78, k) + (i % 2 ? 5 : -5) * (1 - k), py = lerp(L.ground + H * 0.04, horizon + H * 0.01, k); x.beginPath(); x.ellipse(px, py, 4 * (1 - k * 0.7), 2 * (1 - k * 0.7), 0, 0, TAU); x.fill(); }
@@ -533,7 +535,7 @@
       else { popup("RAAK", "g"); beep(520 + Math.min(streak, 20) * 20, 0.07, "triangle", 0.08); buzz(16); }
       beep(110, 0.09, "square", 0.06); // de klap
       bumpCount();
-      if (QUIPS[streak]) later(() => popup(QUIPS[streak], "c", L.mY + 4), 160);
+      if (QUIPS[streak]) later(() => popup(QUIPS[streak], "c", L.ground + H * 0.075), 160);
       if (logs >= 3) hint.style.opacity = "0";
       idx++; cracked = false;
       zoneW = halfWidth(streak, d);
@@ -577,19 +579,21 @@
       const pk = Math.max(0.016, visW * PERFECT_K);
       const live = phase === "play" || phase === "howto" || phase === "count";
       const pulse = 0.75 + 0.25 * Math.sin(ts * 6) + glow * 0.4;
-      g.globalCompositeOperation = "lighter";
-      g.shadowColor = "rgba(255,106,26,.9)"; g.shadowBlur = 18 * pulse;
+      g.globalAlpha = live ? 1 : 0.5;
+      g.shadowColor = "rgba(255,106,26,.95)"; g.shadowBlur = 16 + 10 * pulse;
       g.lineCap = "round";
-      g.lineWidth = tw - 2; g.strokeStyle = "rgba(232,64,28," + (0.75 * (live ? 1 : 0.4)) + ")";
+      g.lineWidth = tw - 2; g.strokeStyle = "#c2300f";
       g.beginPath(); g.arc(cx, mY, mR, a0, a1); g.stroke();
-      g.lineWidth = tw * 0.55; g.strokeStyle = "rgba(255,150,40," + 0.8 * pulse + ")";
+      g.shadowBlur = 0;
+      g.lineWidth = tw * 0.5; g.strokeStyle = "rgba(255," + Math.round(106 + 40 * pulse) + ",26,1)";
       g.beginPath(); g.arc(cx, mY, mR, a0, a1); g.stroke();
-      g.shadowColor = "rgba(255,194,71,1)"; g.shadowBlur = 14 + 10 * pulse;
-      g.lineWidth = tw - 1; g.strokeStyle = "rgba(255,243,208," + Math.min(1, 0.85 * pulse) + ")";
+      g.lineWidth = tw * 0.16; g.strokeStyle = "rgba(255,194,71,.8)";
+      g.beginPath(); g.arc(cx, mY, mR - tw * 0.05, a0, a1); g.stroke();
+      g.shadowColor = "rgba(255,194,71,1)"; g.shadowBlur = 12 + 10 * pulse;
+      g.lineWidth = tw + 2; g.strokeStyle = "#fff0c4";
       g.lineCap = "butt";
       g.beginPath(); g.arc(cx, mY, mR, mAng(Math.max(0, visC - pk)), mAng(Math.min(1, visC + pk))); g.stroke();
-      g.shadowBlur = 0;
-      g.globalCompositeOperation = "source-over";
+      g.shadowBlur = 0; g.globalAlpha = 1;
       // naald (met spoor)
       const p = phase === "howto" ? needle(ts * 1000, d) : needleNow(t);
       trail.push(p); if (trail.length > 6) trail.shift();
@@ -670,8 +674,9 @@
       g.strokeStyle = "rgba(30,16,8,.5)"; g.lineWidth = 1.5; // oude bijlkerven
       [[-0.55, -0.1, -0.2, 0.3], [0.3, -0.4, 0.6, 0.1], [0.1, 0.35, 0.45, 0.5]].forEach(([a, b, e, f]) => { g.beginPath(); g.moveTo(cx + a * srx, stumpTop + b * sry); g.lineTo(cx + e * srx, stumpTop + f * sry); g.stroke(); });
       // sneeuwrandje + sneeuw tegen de voet
-      g.fillStyle = "rgba(225,234,250,.85)";
-      g.beginPath(); g.ellipse(cx - srx * 0.55, stumpTop - sry * 0.55, srx * 0.32, sry * 0.3, -0.25, 0, TAU); g.fill();
+      const cap = g.createRadialGradient(cx - srx * 0.62, stumpTop - sry * 0.45, 1, cx - srx * 0.62, stumpTop - sry * 0.45, srx * 0.3);
+      cap.addColorStop(0, "rgba(230,238,252,.9)"); cap.addColorStop(0.7, "rgba(210,222,245,.6)"); cap.addColorStop(1, "rgba(210,222,245,0)");
+      g.fillStyle = cap; g.beginPath(); g.ellipse(cx - srx * 0.62, stumpTop - sry * 0.45, srx * 0.3, sry * 0.42, -0.2, 0, TAU); g.fill();
       g.fillStyle = "#3a4558";
       g.beginPath(); g.ellipse(cx, bottom + sry * 0.4, srx * 1.3, sry * 0.75, 0, Math.PI, TAU); g.fill();
       g.fillStyle = "rgba(220,230,250,.18)";
@@ -685,9 +690,10 @@
       const im = b.knot ? knotImg : logImg;
       const dk = Math.min(1, (now - dropAt) / 260);
       let dy = 0;
-      if (dk < 1) dy = dk < 0.75 ? -H * 0.32 * (1 - Math.pow(dk / 0.75, 2)) : -10 * Math.sin(((dk - 0.75) / 0.25) * Math.PI);
+      if (dk < 1) dy = dk < 0.7 ? -H * 0.09 * (1 - Math.pow(dk / 0.7, 2)) : -6 * Math.sin(((dk - 0.7) / 0.3) * Math.PI);
       if (logGone) return;
       g.save();
+      if (dk < 0.5) g.globalAlpha = dk * 2;
       g.translate(cx, stumpTop + dy);
       if (wobble > 0.01) g.rotate(Math.sin(now / 30) * 0.06 * wobble);
       g.fillStyle = "rgba(0,0,0,.4)"; g.beginPath(); g.ellipse(4, 2, lrx * 1.1, lry * 1.1, 0, 0, TAU); g.fill();
@@ -792,7 +798,10 @@
         // binnenkant: vers, licht hout
         g.fillStyle = "#e9be86";
         g.fillRect(p.side < 0 ? -2 : 0, -im.h / 2 + im.top, 2, im.h - im.top - L.lry);
-        if (p.gold > 0.02) { g.globalCompositeOperation = "lighter"; g.fillStyle = "rgba(255,194,71," + p.gold * 0.5 + ")"; g.fillRect(p.side < 0 ? -hw : 0, -im.h / 2, hw, im.h); }
+        if (p.gold > 0.02) {
+          g.globalCompositeOperation = "lighter"; g.globalAlpha = p.gold * 0.7;
+          g.drawImage(im.img, sx * dpr, 0, hw * dpr, im.h * dpr, p.side < 0 ? -hw : 0, -im.h / 2, hw, im.h);
+        }
         g.restore();
       });
     }
