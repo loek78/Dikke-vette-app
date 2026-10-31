@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <meta name="theme-color" content="#0d0618">
+  <meta name="description" content="Dikke Vette App — partytools voor op de bank en in de kroeg.">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Dikke Vette">
+  <title>Dikke Vette App</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <canvas id="confetti" aria-hidden="true"></canvas>
+
+  <!-- HOME -->
+  <main class="screen active" data-screen="home">
+    <header class="hero">
+      <div class="logo" aria-hidden="true">🔥</div>
+      <h1><span>DIKKE</span><span>VETTE</span><span>APP</span></h1>
+      <p class="tagline">Partytools voor op de bank &amp; in de kroeg</p>
+    </header>
+
+    <nav class="tiles">
+      <button class="tile t-finger" data-go="finger">
+        <span class="tile-emoji">☝️</span>
+        <span class="tile-title">Vingerkiezer</span>
+        <span class="tile-sub">Iedereen een vinger op het scherm. Wie is de pineut?</span>
+      </button>
+      <button class="tile t-wheel" data-go="wheel">
+        <span class="tile-emoji">🎡</span>
+        <span class="tile-title">Rad van Fortuin</span>
+        <span class="tile-sub">Draai voor namen, eten, opdrachten…</span>
+      </button>
+      <button class="tile t-cards" data-go="cards">
+        <span class="tile-emoji">🃏</span>
+        <span class="tile-title">Kaartspel</span>
+        <span class="tile-sub">Meest waarschijnlijk, Ik heb nog nooit, Doe of Durf</span>
+      </button>
+      <button class="tile t-teams" data-go="teams">
+        <span class="tile-emoji">⚔️</span>
+        <span class="tile-title">Teams maken</span>
+        <span class="tile-sub">Eerlijk (nou ja) verdelen in teams</span>
+      </button>
+      <button class="tile t-dice" data-go="dice">
+        <span class="tile-emoji">🎲</span>
+        <span class="tile-title">Dobbelstenen</span>
+        <span class="tile-sub">Tik of schud je telefoon</span>
+      </button>
+    </nav>
+
+    <footer class="home-foot">
+      <button id="installBtn" class="ghost hidden">📲 Installeer op je telefoon</button>
+      <button id="soundBtn" class="ghost">🔊 Geluid aan</button>
+    </footer>
+  </main>
+
+  <!-- VINGERKIEZER -->
+  <section class="screen" data-screen="finger">
+    <div class="topbar floating">
+      <button class="back" data-back aria-label="Terug">‹</button>
+      <div class="seg" id="fingerMode">
+        <button data-n="1" class="on">1 winnaar</button>
+        <button data-n="2">2</button>
+        <button data-n="3">3</button>
+        <button data-n="teams">Teams</button>
+      </div>
+    </div>
+    <div id="fingerArea" class="finger-area">
+      <div class="finger-hint" id="fingerHint">
+        <div class="big">☝️</div>
+        <p>Leg allemaal een vinger op het scherm</p>
+        <small>en hou vast…</small>
+      </div>
+      <div id="flood" class="flood"></div>
+    </div>
+  </section>
+
+  <!-- RAD -->
+  <section class="screen" data-screen="wheel">
+    <div class="topbar">
+      <button class="back" data-back aria-label="Terug">‹</button>
+      <h2>Rad van Fortuin</h2>
+      <button class="icon-btn" id="wheelPresetBtn" aria-label="Voorbeelden">✨</button>
+    </div>
+    <div class="wheel-wrap">
+      <div class="pointer" aria-hidden="true"></div>
+      <canvas id="wheel" width="600" height="600"></canvas>
+      <button id="spinBtn" class="spin-btn">DRAAI</button>
+    </div>
+    <div class="result" id="wheelResult">&nbsp;</div>
+    <div class="list-editor" id="wheelEditor"></div>
+  </section>
+
+  <!-- KAARTEN -->
+  <section class="screen" data-screen="cards">
+    <div class="topbar">
+      <button class="back" data-back aria-label="Terug">‹</button>
+      <h2>Kaartspel</h2>
+      <span class="counter" id="cardCounter"></span>
+    </div>
+    <div class="deck-picker" id="deckPicker"></div>
+    <div class="card-stage" id="cardStage">
+      <div class="card" id="card">
+        <div class="card-kicker" id="cardKicker"></div>
+        <div class="card-text" id="cardText"></div>
+        <div class="card-foot">tik of swipe ➜</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- TEAMS -->
+  <section class="screen" data-screen="teams">
+    <div class="topbar">
+      <button class="back" data-back aria-label="Terug">‹</button>
+      <h2>Teams maken</h2>
+      <span></span>
+    </div>
+    <div class="list-editor" id="teamsEditor"></div>
+    <div class="stepper">
+      <span>Aantal teams</span>
+      <button id="teamMinus" aria-label="Minder">−</button>
+      <b id="teamCount">2</b>
+      <button id="teamPlus" aria-label="Meer">+</button>
+    </div>
+    <button class="primary" id="makeTeams">🎲 Verdeel!</button>
+    <div class="teams-out" id="teamsOut"></div>
+  </section>
+
+  <!-- DOBBELSTENEN -->
+  <section class="screen" data-screen="dice">
+    <div class="topbar">
+      <button class="back" data-back aria-label="Terug">‹</button>
+      <h2>Dobbelstenen</h2>
+      <span></span>
+    </div>
+    <div class="stepper">
+      <span>Aantal stenen</span>
+      <button id="diceMinus" aria-label="Minder">−</button>
+      <b id="diceCount">2</b>
+      <button id="dicePlus" aria-label="Meer">+</button>
+    </div>
+    <div class="dice-board" id="diceBoard"></div>
+    <div class="dice-total" id="diceTotal">Tik om te gooien</div>
+    <button class="ghost" id="shakeBtn">📳 Schudden aanzetten</button>
+  </section>
+
+  <div class="toast" id="toast"></div>
+
+  <script src="data.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
