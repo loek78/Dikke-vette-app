@@ -213,7 +213,7 @@ test("dikke mist: oude rondes alleen met je eigen woord in de view", () => {
   assert.ok(!/eersteB/.test(JSON.stringify(v)));
 });
 
-test("score: logs geheel getal in [-2, 4], formule max(1, 5−N) / −1, Nederlandse regels met namen", () => {
+test("score: logs geheel getal in [-2, 4], formule max(1, 5−N) (Telt!: één minder, min. 1) / −1, Nederlandse regels met namen", () => {
   const rng = DVMini.rng(99);
   for (let i = 0; i < 600; i++) {
     const n = 2 + Math.floor(rng() * 5), players = PLAYERS.slice(0, n), N = 1 + Math.floor(rng() * 9);
@@ -222,7 +222,7 @@ test("score: logs geheel getal in [-2, 4], formule max(1, 5−N) / −1, Nederla
     const res = { success, rounds: N, telt: rng() < 0.3, gaveUp: !success && rng() < 0.3, word: success ? "vuur" : null, trail, pids: players.map((p) => p.pid) };
     const sc = def.score(res, { difficulty: 1 + (i % 3), players });
     assert.ok(Number.isInteger(sc.logs) && sc.logs >= -2 && sc.logs <= 4, "logs " + sc.logs);
-    assert.strictEqual(sc.logs, success ? Math.max(1, 5 - N) : -1);
+    assert.strictEqual(sc.logs, success ? Math.max(1, 5 - N - (res.telt ? 1 : 0)) : -1);
     assert.ok(Array.isArray(sc.lines) && sc.lines.length >= 2 && sc.lines.every((l) => typeof l === "string" && l.length > 5));
     assert.ok(Object.keys(sc.perPlayer).every((p) => players.some((x) => x.pid === p)));
   }
@@ -276,4 +276,31 @@ test("bots herhalen hun eigen woorden niet", () => {
     shared = act(next, "p1", { t: "word", w: "anders" + i });
     if (def.result(shared)) break;
   }
+});
+
+test("Telt! is geen gratis maximum: één blok minder dan een echte match", () => {
+  const P2 = PLAYERS.slice(0, 2);
+  const base = { success: true, word: null, trail: [{ p0: "sneeuw", p1: "ijs" }], pids: ["p0", "p1"] };
+  assert.strictEqual(def.score(Object.assign({}, base, { rounds: 1, telt: true }), { players: P2 }).logs, 3);
+  assert.strictEqual(def.score(Object.assign({}, base, { rounds: 3, telt: true }), { players: P2 }).logs, 1);
+  assert.strictEqual(def.score(Object.assign({}, base, { rounds: 4, telt: true }), { players: P2 }).logs, 1);
+  // via de reducer: iedereen tikt Telt! na ronde 1
+  let { shared } = setup(4, 2, 2);
+  shared = words(shared, { p0: "sneeuw", p1: "ijs" });
+  shared = act(act(shared, "p0", { t: "telt" }), "p1", { t: "telt" });
+  const r = def.result(shared);
+  assert.ok(r.success && r.telt && r.rounds === 1);
+  assert.strictEqual(def.score(r, { players: P2 }).logs, 3);
+});
+
+test("alles gelijk = elk paar gelijk (geen keten via een gedeelde stam)", () => {
+  // bomen~boom en bomen~bom, maar boom≁bom: geen match, wel een gedeeltelijke groep
+  assert.ok(def.same("bomen", "boom") && def.same("bomen", "bom") && !def.same("boom", "bom"));
+  let { shared } = setup(6, 2, 3);
+  shared = words(shared, { p0: "bomen", p1: "boom", p2: "bom" });
+  assert.strictEqual(def.result(shared), null);
+  assert.strictEqual(shared.rounds[0].match, false);
+  let s2 = setup(6, 2, 3).shared;
+  s2 = words(s2, { p0: "Kaarsen", p1: "kaars", p2: "kaarsje" });
+  assert.ok(def.result(s2) && def.result(s2).success);
 });

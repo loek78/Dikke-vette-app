@@ -98,3 +98,32 @@ test("score muteert de invoer niet", () => {
   def.score(results, { difficulty: 2, players: PLAYERS.slice(0, 2) });
   assert.deepStrictEqual(results, copy);
 });
+
+test("vensters: perfect < goed < buiten, en goed-vensters van buurnoten overlappen nooit", () => {
+  for (const d of [1, 2, 3]) {
+    const c = def.CFG[d];
+    assert.ok(c.perfect < c.good && c.good < c.bad);
+    for (let s = 1; s < 80; s++) {
+      const n = def.pattern(s * 7919, d);
+      for (let i = 1; i < n.length; i++) assert.ok(n[i].t - n[i - 1].t > 2 * c.good, "d" + d + " seed " + s);
+    }
+  }
+});
+
+test("classify: dichtstbijzijnde noot, net-naast = mis zonder luchtpuf, ver weg = luchtpuf", () => {
+  const c = def.CFG[3];
+  const notes = [{ t: 1000 }, { t: 1250 }, { t: 2000 }];
+  assert.strictEqual(def.classify(notes, 0, 1010, c).grade, "perfect");
+  assert.strictEqual(def.classify(notes, 0, 1000 - c.good + 1, c).grade, "good");
+  const late = def.classify(notes, 0, 1000 + c.good + 30, c); // 140 ms te laat voor de eerste, 110 vroeg voor de tweede
+  assert.ok(late.i === 1 && late.grade === "good", "tik hoort bij de dichtstbijzijnde achtste");
+  const nm = def.classify(notes, 0, 2000 - c.good - 30, c);
+  assert.deepStrictEqual([nm.i, nm.grade], [2, "miss"]);
+  assert.ok(nm.dt < 0);
+  assert.strictEqual(def.classify(notes, 0, 1600, c), null);
+  assert.strictEqual(def.classify(notes, 0, 400, c), null);
+  // al beoordeelde noten tellen niet mee
+  const done = [{ t: 1000, done: true }, { t: 1250 }];
+  assert.strictEqual(def.classify(done, 0, 1000, c), null);
+  assert.strictEqual(def.classify(done, 0, 1200, c).i, 1);
+});

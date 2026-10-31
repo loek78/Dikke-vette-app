@@ -10,7 +10,7 @@
   // sintel, zijwind (boog buigt weg), tikstraal (px) en "par" (vangpercentage van een goede vanger).
   const CFG = {
     1: { name: "Knisperen", n: 26, fly: [2300, 3000], salvo: 0.12, salvoMax: 2, big: 0.1, sway: 0, radius: 46, par: 0.86 },
-    2: { name: "Vonkenregen", n: 40, fly: [1750, 2350], salvo: 0.22, salvoMax: 3, big: 0.14, sway: 0.08, radius: 42, par: 0.76 },
+    2: { name: "Spetteren", n: 40, fly: [1750, 2350], salvo: 0.22, salvoMax: 3, big: 0.14, sway: 0.08, radius: 42, par: 0.76 },
     3: { name: "Vuurstorm", n: 56, fly: [1250, 1800], salvo: 0.3, salvoMax: 4, big: 0.18, sway: 0.16, radius: 40, par: 0.66 },
   };
   const FIRST = 700, END_PAD = 400; // eerste vonk na 0,7 s; alles is geland vóór DURATION - END_PAD
@@ -106,11 +106,11 @@
     const bigs = played.slice().sort((a, b) => b.v.big - a.v.big)[0];
     if (bigs && bigs.v.big >= 3) lines.push(nameOf(bigs.p) + " doofde " + (bigs.v.big / 2 | 0) + " dikke sintels met de blote hand. Stoer.");
     const streak = played.slice().sort((a, b) => b.v.combo - a.v.combo)[0];
-    if (streak && streak.v.combo >= 12) lines.push(nameOf(streak.p) + " ving er " + streak.v.combo + " op rij. Geen vonk kwam erdoor.");
+    if (streak && streak.v.combo >= 12) lines.push(nameOf(streak.p) + " had een reeks van " + streak.v.combo + " op rij. Het kleed hield de adem in.");
     rows.filter((x) => !x.v).forEach((x) => lines.push(nameOf(x.p) + " keek de andere kant op. Gloei: \"Niemand zag het, toch?\""));
     if (played.length >= 2) {
       const c = played.reduce((s, x) => s + x.v.caught, 0), m = played.reduce((s, x) => s + x.v.missed, 0);
-      lines.push("Samen " + c + " vonken gevangen, " + m + " " + (m === 1 ? "schroeiplek" : "schroeiplekken") + ".");
+      lines.push("Samen " + c + " vonken gevangen, " + m + " op het kleed.");
     }
     const perPlayer = {};
     rows.forEach((x) => { perPlayer[x.p.pid] = x.v ? x.v.caught + " gevangen · " + x.v.missed + " op het kleed" : "—"; });
@@ -149,6 +149,7 @@
   background:linear-gradient(180deg,#fff3d0,var(--flame,#ffc247) 45%,var(--ember,#ff6a1a));-webkit-background-clip:text;background-clip:text;color:transparent;
   filter:drop-shadow(0 0 18px rgba(255,106,26,.45))}
 .vk-text{font-size:17px;line-height:1.4;max-width:330px;margin:0;color:var(--glow,#ffe7b8)}
+.vk-hint{font-size:14px;line-height:1.35;max-width:320px;margin:-6px 0 0;color:var(--ash,#b8a99a)}
 .vk-legend{display:flex;flex-wrap:wrap;justify-content:center;gap:8px;max-width:340px}
 .vk-chip{display:inline-flex;align-items:center;gap:7px;padding:7px 11px;border-radius:99px;font-size:13px;color:var(--ash,#b8a99a);
   background:rgba(255,231,184,.06);border:1px solid rgba(255,194,71,.18)}
@@ -168,6 +169,13 @@
 .vk-cnt i{width:12px;height:12px;border-radius:50%;flex:none;background:#fff3d0;transition:transform .12s;
   box-shadow:0 0 6px 2px var(--flame,#ffc247),0 0 16px 5px rgba(255,106,26,.55)}
 .vk-cnt i.bump{transform:scale(1.7)}
+.vk-combo{position:absolute;left:16px;top:calc(max(12px,env(safe-area-inset-top)) + 32px);z-index:3;pointer-events:none;
+  font:900 13px/1 "Unbounded",system-ui,sans-serif;letter-spacing:.04em;color:#2a0d02;padding:5px 9px;border-radius:99px;
+  background:linear-gradient(180deg,var(--flame,#ffc247),var(--ember,#ff6a1a));box-shadow:0 0 16px rgba(255,106,26,.6);
+  opacity:0;transform:scale(.6);transition:opacity .2s,transform .2s}
+.vk-combo.on{opacity:1;transform:scale(1)}
+.vk-combo.bump{animation:vk-tick .3s ease-out}
+.vk-combo.lost{opacity:0;transform:translateY(8px) scale(.8);transition:opacity .45s,transform .45s}
 .vk-mid{display:flex;flex-direction:column;align-items:center;gap:7px;padding-top:9px}
 .vk-bar{width:min(32vw,130px);height:6px;border-radius:9px;background:rgba(255,231,184,.1);overflow:hidden}
 .vk-bar i{display:block;height:100%;width:100%;border-radius:9px;transform-origin:left;
@@ -177,12 +185,12 @@
 .vk-time{justify-self:end;font:900 22px/1 "Unbounded",system-ui,sans-serif;color:var(--glow,#ffe7b8);min-width:2ch;text-align:right}
 .vk-time.hot{color:var(--blaze,#e8401c);animation:vk-tick .5s ease-out}
 @keyframes vk-tick{0%{transform:scale(1.35)}100%{transform:scale(1)}}
-.vk-pop{position:absolute;transform:translate(-50%,-50%);pointer-events:none;z-index:3;max-width:min(340px,90%);width:max-content;
+.vk-pop{position:absolute;transform:translate(-50%,0);pointer-events:none;z-index:3;max-width:min(340px,90%);width:max-content;
   color:var(--glow,#ffe7b8);font-size:14px;font-weight:700;line-height:1.3;text-align:center;
   background:rgba(23,16,11,.8);border:1px solid rgba(255,194,71,.35);padding:8px 13px;border-radius:14px;
   box-shadow:0 8px 24px rgba(0,0,0,.4);animation:vk-pop 2.2s cubic-bezier(.2,.9,.3,1.2) forwards}
-@keyframes vk-pop{0%{transform:translate(-50%,-30%) scale(.6);opacity:0}10%{transform:translate(-50%,-50%) scale(1.04);opacity:1}
-  80%{opacity:1;transform:translate(-50%,-50%) scale(1)}100%{transform:translate(-50%,-90%);opacity:0}}
+@keyframes vk-pop{0%{transform:translate(-50%,20%) scale(.6);opacity:0}10%{transform:translate(-50%,0) scale(1.04);opacity:1}
+  80%{opacity:1;transform:translate(-50%,0) scale(1)}100%{transform:translate(-50%,-40%);opacity:0}}
 .vk .mini-countdown{position:absolute;inset:0;z-index:5;display:flex;align-items:center;justify-content:center;pointer-events:none;
   font:900 96px/1 "Unbounded",system-ui,sans-serif;color:var(--flame,#ffc247);text-shadow:0 0 30px rgba(255,106,26,.9),0 4px 0 #6a1c04;
   background:radial-gradient(circle at 50% 55%,rgba(11,7,5,.1),rgba(11,7,5,.55))}
@@ -208,7 +216,7 @@
   padding:10px 16px;border-radius:99px;background:rgba(23,16,11,.75);border:1px solid rgba(255,231,184,.12)}
 .vk-wait i{width:10px;height:10px;border-radius:50%;background:var(--ember,#ff6a1a);box-shadow:0 0 12px var(--ember,#ff6a1a);animation:vk-breathe 1s ease-in-out infinite}
 @keyframes vk-breathe{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(.7);opacity:.6}}
-@media (prefers-reduced-motion:reduce){.vk-wait i,.vk-time.hot,.vk-pop{animation:none}}
+@media (prefers-reduced-motion:reduce){.vk-wait i,.vk-time.hot,.vk-pop,.vk-combo.bump,.vk-res{animation:none}}
 `;
 
   function injectCss() {
@@ -271,12 +279,15 @@
     hud.append(cnt, mid, timeEl);
     hud.style.opacity = "0";
     root.appendChild(hud);
+    const comboEl = h("div", "vk-combo");
+    hud.appendChild(comboEl);
 
     // --- Howto ---
     const how = h("div", "vk-scr vk-howto");
     how.appendChild(h("div", "vk-kicker", "Vonkenregen · " + c.name + " · 25 s"));
     how.appendChild(h("h2", "vk-title vk-disp", "Vonken"));
     how.appendChild(h("p", "vk-text", "Tik de vonken uit de lucht voor ze op het kleed landen."));
+    how.appendChild(h("p", "vk-hint", "Hun schaduw op het kleed verraadt waar ze neerkomen."));
     const leg = h("div", "vk-legend");
     const chip = (cls, txt, bold) => { const x = h("span", "vk-chip"); x.appendChild(h("i", cls)); x.appendChild(document.createTextNode(txt + " ")); if (bold) x.appendChild(h("b", null, bold)); leg.appendChild(x); };
     chip("", "vonk =", "1 tik");
@@ -313,7 +324,9 @@
       glowImg = sprite("255,170,60", [[0, 1], [0.18, 0.75], [0.45, 0.22], [1, 0]]);
       hotImg = sprite("255,80,30", [[0, 1], [0.25, 0.5], [1, 0]]);
     }
-    if (typeof ResizeObserver === "function") { ro = new ResizeObserver(() => layout()); ro.observe(root); }
+    const onResize = () => { if (!dead) layout(); };
+    if (typeof ResizeObserver === "function") { ro = new ResizeObserver(onResize); ro.observe(root); }
+    else addEventListener("resize", onResize);
 
     const off = (w, hh) => { const o = document.createElement("canvas"); o.width = Math.max(1, Math.round(w * dpr)); o.height = Math.max(1, Math.round(hh * dpr)); const x = o.getContext("2d"); x.scale(dpr, dpr); return [o, x]; };
     function sprite(rgb, st) {
@@ -478,13 +491,22 @@
       return p;
     }
 
-    function popup(text, y) {
+    function popup(text) {
+      if (phase !== "play") return;
       const p = h("div", "vk-pop", text);
+      const top = root.getBoundingClientRect().top; // bovenrand net onder de HUD, ook met notch/safe-area
+      const y = Math.max(comboEl.getBoundingClientRect().bottom, scorchEl.getBoundingClientRect().bottom) - top + 8;
       p.style.left = "50%";
       p.style.top = Math.round(y) + "px";
       p.addEventListener("animationend", () => p.remove());
       root.querySelectorAll(".vk-pop").forEach((x) => x.remove());
       root.appendChild(p);
+    }
+    function showCombo() {
+      if (streak >= 3) {
+        comboEl.textContent = streak + " op rij";
+        comboEl.className = "vk-combo on"; void comboEl.offsetWidth; comboEl.classList.add("bump");
+      } else if (comboEl.classList.contains("on")) comboEl.className = "vk-combo lost";
     }
     function bumpCount() {
       cntNum.textContent = String(caught);
@@ -501,14 +523,13 @@
       for (let i = 0; i < n && parts.length < 400; i++) parts.push({ k: "smoke", x: x + (Math.random() - 0.5) * 10, y, vx: (Math.random() - 0.5) * 14, vy: -20 - Math.random() * 25, life: 0, max: 1.4 + Math.random(), s: 4 + Math.random() * 5 });
     }
 
-    function spawn(s, t) {
-      live.push(Object.assign({}, s, { t0: s.t, hp: s.big ? 2 : 1, trail: [] }));
+    function spawn(s) {
+      live.push(Object.assign({}, s, { t0: s.t, hp: s.big ? 2 : 1 }));
       flare = Math.min(1.4, flare + (s.big ? 0.7 : 0.35));
       if (s.big) beep(150, 0.12, "sawtooth", 0.05);
       else beep(380 + Math.random() * 220, 0.025, "square", 0.015);
       const dp = { x: L.door.x + s.du * L.win.w * 0.6, y: L.door.y };
       burst(dp.x, dp.y - 4, s.big ? 10 : 4, 120, false);
-      void t;
     }
 
     function tap(px, py) {
@@ -526,9 +547,9 @@
       if (s.hp === 2) { // dikke sintel: eerst wegmeppen, dan zweeft hij nog even
         s.hp = 1;
         s.from = { x: p.x / W, y: p.y / H };
-        s.t0 = t; s.dur = KNOCK;
+        s.t0 = t; s.dur = Math.max(450, Math.min(KNOCK, DURATION - t));
         s.lu = clamp01(s.lu + (Math.random() - 0.5) * 0.3) * 0.8 + 0.1; s.lv = Math.min(0.92, clamp01(s.lv + 0.06 + Math.random() * 0.12));
-        s.ah = 0.07; s.sway = 0; s.trail = [];
+        s.ah = 0.07; s.sway = 0;
         burst(p.x, p.y, 16, 200, true);
         rings.push({ x: p.x, y: p.y, life: 0, max: 0.4, r: 34, col: "255,140,50", a: 0.8 });
         texts.push({ x: p.x, y: p.y - 26, s: "KNAK!", life: 0, max: 0.6, col: "#ffc247", size: 20 });
@@ -547,25 +568,28 @@
       beep(820 + Math.min(streak, 30) * 22, 0.06, "triangle", 0.07);
       if (s.big) beep(1320, 0.12, "sine", 0.05);
       buzz(s.big ? 26 : 12);
-      if (quips[best] && best === streak) { const q = quips[best]; delete quips[best]; later(() => popup(q, L.sTop + 6), 120); }
+      Object.keys(quips).forEach((k) => { // drempel gepasseerd (sintel telt 2, dus niet alleen ===)
+        if (+k > streak - v && +k <= streak) { const q = quips[k]; delete quips[k]; later(() => popup(q), 120); }
+      });
+      showCombo();
     }
 
     function land(s) {
       s.dead = true;
       const v = value(s);
-      missed += v; streak = 0;
-      const p = rugPt(s.lu, s.lv), k = depth(p.y);
+      missed += v; streak = 0; showCombo();
+      const p = rugPt(s.lu, s.lv);
       const sr = M.rng((s.id + 1) * 977);
-      scorches.push({ x: p.x, y: p.y, r: (s.big ? 15 : 9) * k, age: 0, blobs: Array.from({ length: s.big ? 7 : 5 }, () => ({ dx: (sr() - 0.5) * 1.1, dy: (sr() - 0.5) * 0.6, r: 0.45 + sr() * 0.55 })) });
+      scorches.push({ lu: s.lu, lv: s.lv, r0: s.big ? 15 : 9, age: 0, blobs: Array.from({ length: s.big ? 7 : 5 }, () => ({ dx: (sr() - 0.5) * 1.1, dy: (sr() - 0.5) * 0.6, r: 0.45 + sr() * 0.55 })) });
       smoke(p.x, p.y, s.big ? 6 : 3);
       burst(p.x, p.y, 6, 90, false);
       sting = Math.min(1, sting + (s.big ? 0.8 : 0.5));
       shake = reduced ? 0 : Math.max(shake, s.big ? 0.5 : 0.2);
-      scorchEl.textContent = missed + (missed === 1 ? " schroeiplek" : " schroeiplekken");
+      scorchEl.textContent = scorches.length + (scorches.length === 1 ? " schroeiplek" : " schroeiplekken");
       scorchEl.classList.add("hit"); later(() => scorchEl.classList.remove("hit"), 300);
       beep(120, 0.16, "sawtooth", 0.035); beep(70, 0.2, "sine", 0.05);
       buzz(s.big ? 60 : 30);
-      if (firstScorch) { firstScorch = false; later(() => popup("Gloei: \"Oeps. Dat kleed was toch al lelijk.\"", L.sTop + 6), 150); }
+      if (firstScorch) { firstScorch = false; later(() => popup("Gloei: \"Oeps. Dat kleed was toch al lelijk.\""), 150); }
     }
 
     const onDown = (e) => {
@@ -664,6 +688,8 @@
     function drawScorches(dt) {
       scorches.forEach((sc) => {
         sc.age += dt;
+        const p = rugPt(sc.lu, sc.lv); // in kleedcoördinaten: blijft goed liggen na draaien/resizen
+        sc.x = p.x; sc.y = p.y; sc.r = sc.r0 * depth(p.y);
         g.save(); g.translate(sc.x, sc.y);
         // schroeirand
         g.fillStyle = "rgba(70,28,10,.45)";
@@ -704,13 +730,15 @@
       live.forEach((s) => {
         if (s.dead) return;
         const p = posAt(s, t), k = depth(p.y);
-        s.trail.push({ x: p.x, y: p.y });
-        if (s.trail.length > (s.big ? 14 : 11)) s.trail.shift();
+        // staart: punten op het pad in het verleden (tijd, niet frames: even lang op 60 en 120 Hz)
+        const trail = [];
+        for (let i = s.big ? 13 : 10; i >= 1; i--) { const tt = t - i * 20; if (tt > s.t0) trail.push(posAt(s, tt)); }
+        trail.push(p);
         const hot = p.u > 0.72 ? (p.u - 0.72) / 0.28 : 0; // vlak voor de landing: roodgloeiend
         g.save(); g.globalCompositeOperation = "lighter"; g.lineCap = "round";
         // staart
-        for (let i = 1; i < s.trail.length; i++) {
-          const a = i / s.trail.length, q = s.trail[i - 1], r = s.trail[i];
+        for (let i = 1; i < trail.length; i++) {
+          const a = i / trail.length, q = trail[i - 1], r = trail[i];
           g.strokeStyle = "rgba(255," + Math.round(150 + 60 * a) + "," + Math.round(40 + 60 * a) + "," + a * 0.55 + ")";
           g.lineWidth = (s.big ? 7 : 4) * a * k;
           g.beginPath(); g.moveTo(q.x, q.y); g.lineTo(r.x, r.y); g.stroke();
@@ -747,8 +775,8 @@
       for (let i = parts.length - 1; i >= 0; i--) {
         const p = parts[i];
         p.life += dt; p.x += p.vx * dt; p.y += p.vy * dt;
-        if (p.k === "spark") { p.vy += 420 * dt; p.vx *= 0.96; }
-        else { p.vx *= 0.98; p.vy *= 0.99; }
+        if (p.k === "spark") { p.vy += 420 * dt; p.vx *= Math.pow(0.96, dt * 60); }
+        else { p.vx *= Math.pow(0.98, dt * 60); p.vy *= Math.pow(0.99, dt * 60); }
         if (p.life >= p.max) { parts.splice(i, 1); continue; }
         const a = 1 - p.life / p.max;
         if (p.k === "spark") {
@@ -814,12 +842,15 @@
       if (dead) return;
       raf = requestAnimationFrame(frame);
       if (!L || !W) layout();
-      const dt = Math.min(0.05, (now - (lastFrame || now)) / 1000);
+      const gap = now - (lastFrame || now);
+      // Tab weg of telefoon hapert: de speltijd staat stil i.p.v. dat alle vonken in één klap landen.
+      if (phase === "play" && gap > 250) t0 += gap - 1000 / 60;
+      const dt = Math.min(0.05, gap / 1000);
       lastFrame = now;
       const ts = (now - now0) / 1000, t = playT();
 
       if (phase === "play") {
-        while (next < sparks.length && sparks[next].t <= t) spawn(sparks[next++], t);
+        while (next < sparks.length && sparks[next].t <= t) spawn(sparks[next++]);
         live.forEach((s) => { if (!s.dead && t >= s.t0 + s.dur) land(s); });
         for (let i = live.length - 1; i >= 0; i--) if (live[i].dead) live.splice(i, 1);
         const left = Math.max(0, DURATION - t);
@@ -883,7 +914,8 @@
       beep(1, 0.001, "sine", 0.0001); // audio ontgrendelen binnen het gebaar
       how.remove();
       hud.style.opacity = "1";
-      ctx.countdown(root).then(() => {
+      const cd = typeof ctx.countdown === "function" ? ctx.countdown : (e) => M.countdown(e, { sfx });
+      cd(root).then(() => {
         if (dead) return;
         t0 = performance.now();
         phase = "play";
@@ -905,7 +937,7 @@
         dead = true;
         cancelAnimationFrame(raf);
         timers.forEach(clearTimeout); timers.clear();
-        if (ro) ro.disconnect();
+        if (ro) ro.disconnect(); else removeEventListener("resize", onResize);
         root.removeEventListener("pointerdown", onDown);
         root.remove();
       },

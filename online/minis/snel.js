@@ -91,7 +91,12 @@
       const n = x.v.times.filter((t) => t === null).length;
       if (n >= 2) lines.push(nameOf(x.p) + (n === ROUNDS ? " tikte geen enkele keer goed. De Vorst grinnikt." : " was " + n + "× te vroeg of te laat. De Vorst grinnikt."));
     });
-    rows.filter((x) => !x.v).forEach((x) => lines.push(nameOf(x.p) + " zat te dutten bij de kachel. De Vorst rekent dat als winst."));
+    const absent = rows.filter((x) => !x.v).map((x) => nameOf(x.p));
+    if (absent.length) {
+      const who = absent.length === 1 ? absent[0] : absent.slice(0, -1).join(", ") + " en " + absent[absent.length - 1];
+      const line = who + (absent.length === 1 ? " zat" : " zaten") + " te dutten bij de kachel. De Vorst rekent dat als winst.";
+      lines.push(line.length <= 140 ? line : absent.length + " spelers zaten te dutten bij de kachel. De Vorst rekent dat als winst.");
+    }
     const perPlayer = {};
     rows.forEach((x) => {
       if (!x.v) { perPlayer[x.p.pid] = "—"; return; }
@@ -239,7 +244,9 @@
 @keyframes sn-dot{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(.7);opacity:.6}}
 @media (max-width:374px){.sn-vl{display:none}.sn-pip{min-width:46px;padding:0 7px}}
 @media (max-height:640px){.sn-board{padding:9px 12px 11px}.sn-big{font-size:58px}.sn-howto{gap:9px}}
-@media (prefers-reduced-motion:reduce){.sn-wait i,.sn-msg .m1.wait{animation:none}.sn-bang.on{animation:none}.sn-bang.hit{opacity:0}}
+@media (max-height:520px){.sn{min-height:0}}
+@media (prefers-reduced-motion:reduce){.sn-wait i,.sn-msg .m1.wait,.sn .mini-countdown.pop,.sn-res{animation:none}.sn-bang.on{animation:none}.sn-bang.hit{opacity:0}
+  .sn-card,.sn-card.live{transition:opacity .2s}}
 `;
 
   function injectCss() {
@@ -314,7 +321,7 @@
     how.appendChild(h("p", "sn-text", "Wacht tot het blok in de kachel knalt en tik dan zo snel je kan, ergens op het scherm: te vroeg is af."));
     const leg = h("div", "sn-legend");
     const chip = (cls, txt, bold) => { const x = h("span", "sn-chip" + (cls ? " " + cls : "")); x.appendChild(document.createTextNode(txt + " ")); if (bold) x.appendChild(h("b", null, bold)); leg.appendChild(x); };
-    chip("ice", "De Vorst tikt in", V + " ms");
+    chip("ice", "De Vorst tikt in", V + "\u00a0ms");
     chip("", "3 rondes · te vroeg =", "kwijt");
     if (d >= 2) chip("", "het vuur", d >= 3 ? "liegt vaak" : "doet soms alsof");
     how.appendChild(leg);
@@ -346,7 +353,7 @@
       W = Math.max(1, r.width); H = Math.max(1, r.height);
       dpr = Math.min(2, (typeof devicePixelRatio === "number" && devicePixelRatio) || 1);
       cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
-      const cx = W / 2, half = Math.min(W * 0.4, 175);
+      const cx = W / 2, half = Math.min(W * 0.4, 175, Math.max(70, (H - 232) / 2.1)); // ook liggend past de kachel
       const top = Math.max(112, H * 0.17), bot = Math.max(top + half * 2.1, H * 0.655);
       const bh = bot - top;
       const wTop = top + bh * 0.24, wBot = top + bh * 0.72;
@@ -380,7 +387,7 @@
 
     // Statisch: planken aan de muur, vloerplaat, gietijzeren kachel (cilinder) met kap en voet.
     function renderBg() {
-      const [o, x] = off(W, H);
+      const [o, x] = off(W, H), drng = M.rng((ctx.seed >>> 0) ^ 0xb6); // eigen rng: zelfde decor na elke resize
       const { cx, half, top, bot, capR } = L;
       x.fillStyle = "#070504"; x.fillRect(0, 0, W, H);
       let px = 0, i = 0;
@@ -686,12 +693,13 @@
       g.restore();
     }
 
-    let lastFrame = 0, now0 = 0;
+    let lastFrame = 0, now0 = 0, fdt = 1000 / 60; // fdt = gladgestreken frame-interval (ms)
     function frame(ts) {
       if (dead) return;
       raf = requestAnimationFrame(frame);
       if (!L || !W) layout();
-      const dt = Math.min(0.05, (ts - (lastFrame || ts)) / 1000);
+      const fd = ts - (lastFrame || ts), dt = Math.min(0.05, fd / 1000);
+      if (fd > 4 && fd < 50) fdt += (fd - fdt) * 0.1;
       lastFrame = ts;
       const st = (ts - now0) / 1000;
 
@@ -775,7 +783,7 @@
       cardEls = null;
       card.classList.remove("on");
       bangEl.className = "sn-bang";
-      setMsg(WAITS[round % WAITS.length], "Ronde " + (round + 1) + " van " + ROUNDS + " · tik pas bij de knal", true);
+      setMsg(WAITS[round % WAITS.length], "Ronde " + (round + 1) + " van " + ROUNDS + " · tik pas bij de\u00a0knal", true);
       setPips();
       beep(180, 0.25, "sine", 0.03);
     }
@@ -786,9 +794,10 @@
       else { flare = 0.7; flash = 0.25; burst(14, 260, L.logC.x, L.logC.y); beep(2200, 0.02, "square", 0.04); }
     }
 
+    // De knal wordt in dít frame getekend maar pas bij de volgende vsync zichtbaar: daar begint de klok.
     function bang(ts) {
       phase = "bang";
-      bangTs = ts;
+      bangTs = ts + Math.max(7, Math.min(34, fdt));
       flash = 1.25; flare = 0.9; shake = reduced ? 0 : 1; logJump = 1; crack = 1; frostK = 0.2;
       burst(reduced ? 30 : 80, 560, L.logC.x, L.logC.y);
       bangEl.className = "sn-bang on";
@@ -890,7 +899,8 @@
       if (t !== null) setBig(String(t), "ms");
       else setBig(tag === "slow" ? "Bevroren" : "Te vroeg");
       cardEls.vs.textContent = t === null ? (tag === "slow" ? "Te laat. De Vorst pakt de ronde." : "Gegokt. De Vorst pakt de ronde.")
-        : win ? (V - t >= 60 ? "Sneller dan de Vorst! Ruim." : "Sneller dan de Vorst!") : t - V <= 25 ? "Net te traag. Het scheelde een ijskristal." : "De Vorst was sneller.";
+        : win ? (V - t) + " ms sneller dan de Vorst!" + (V - t >= 60 ? " Ruim." : "")
+          : t === V ? "Precies gelijk. Bij gelijk wint de Vorst." : t - V <= 25 ? "Net te traag: " + (t - V) + " ms. Eén ijskristal." : "De Vorst was " + (t - V) + " ms sneller.";
       cardEls.me.val.textContent = t === null ? "✕" : String(t);
       cardEls.vo.val.textContent = String(V);
       cardEls.vo.r.classList.toggle("hit", !win);
@@ -916,7 +926,7 @@
       const misses = times.filter((t) => t === null).length;
       if (won >= 2) { try { sfx.fanfare && sfx.fanfare(); } catch (e) { /* stil */ } }
       const res = h("div", "sn-scr sn-res" + (won >= 2 ? "" : " cold"));
-      res.appendChild(h("div", "sn-kicker", "Duel voorbij · De Vorst: " + V + " ms"));
+      res.appendChild(h("div", "sn-kicker", "Duel voorbij · De Vorst:\u00a0" + V + "\u00a0ms"));
       const big = h("div", "sn-big sn-disp", String(won));
       big.appendChild(h("small", null, "/" + ROUNDS));
       res.appendChild(big);
@@ -960,6 +970,8 @@
       } else if (phase === "bang") {
         const t = stamp(e) - bangTs;
         if (t < GUESS) { early(true); return; }
+        if (t > SLOW) { record(null, "slow"); return; } // frame liep achter: telt toch als te laat
+        buzz(t < V ? [14, 40, 22] : 12);
         record(Math.round(t), "ok");
       }
     }

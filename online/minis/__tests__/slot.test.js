@@ -98,6 +98,12 @@ test("reduce is puur: invoer niet gemuteerd; ongeldige acties geven dezelfde ref
   const s3 = def.reduce(s2, gids, { t: "go" }, ctxAt(4000));
   assert.strictEqual(s3.t0, 1000);
   assert.ok(s3.started.includes(gids));
+  // gids begint eerst: dan loopt de klok al (aanwijzingen zijn zichtbaar, vooruit puzzelen telt mee)
+  const g1 = def.reduce(shared, gids, { t: "go" }, ctxAt(500));
+  assert.strictEqual(g1.t0, 500);
+  const g2 = def.reduce(g1, slot, { t: "go" }, ctxAt(7000));
+  assert.strictEqual(g2.t0, 500, "slot erna verandert t0 niet");
+  assert.ok(g2.started.includes(slot) && g2.started.includes(gids));
 });
 
 test("try: fout kost een poging met feedback per moeilijkheid; dezelfde code opnieuw is genegeerd; goed = klaar", () => {
@@ -235,10 +241,16 @@ test("aanwijzingen: elke soort heeft nette tekst", () => {
   const specs = [{ t: "is", i: 0, r: 2 }, { t: "not", i: 1, r: 0 }, { t: "grp", i: 2, g: "bos" }, { t: "ngrp", i: 3, g: "lucht" }, { t: "absent", r: 2 },
     { t: "left", a: 3, b: 5 }, { t: "next", a: 0, b: 1 }, { t: "apart", a: 0, b: 1 }, { t: "even", r: 4 }, { t: "odd", r: 1 }, { t: "fam", i: 0, j: 3 },
     { t: "nfam", i: 1, j: 2 }, { t: "cnt", g: "vuur", n: 0 }, { t: "cnt", g: "bos", n: 2 }, { t: "dup", i: 0, j: 2 }, { t: "ndup", i: 1, j: 3 }, { t: "once", r: 3 }, { t: "twice", r: 5 }];
-  specs.forEach((s) => {
-    const txt = def.textOf(def.partsOf(s));
-    assert.ok(/^[A-Z]/.test(txt) && txt.endsWith(".") && !/undefined|\?/.test(txt), txt);
-  });
+  specs.forEach((s) => [false, true].forEach((rep) => {
+    const txt = def.textOf(def.partsOf(s, rep));
+    assert.ok(/^[A-Z]/.test(txt) && txt.endsWith(".") && !/undefined|\?|  /.test(txt), txt);
+  }));
+  // Vorstslot (dubbele tekens): "een" i.p.v. "de", zodat beide richtingen tegelijk waar kunnen zijn zonder tegenspraak te lijken
+  assert.strictEqual(def.textOf(def.partsOf({ t: "left", a: 2, b: 0 }, true)), "Een ijs staat ergens links van een vlam.");
+  assert.strictEqual(def.textOf(def.partsOf({ t: "next", a: 0, b: 1 }, true)), "Direct rechts naast een vlam staat een maan.");
+  assert.strictEqual(def.textOf(def.partsOf({ t: "even", r: 5 }, true)), "De ster staat alleen op even ringen (2 of 4).");
+  const d3 = setup(11, 3, 2).shared;
+  d3.clues.forEach((c) => assert.ok(!/ (de|het) \S+ staat ergens links| op een (on)?even ring/.test(c.text), c.text));
   assert.strictEqual(def.textOf(def.partsOf({ t: "is", i: 1, r: 2 })), "Op ring 2 staat het ijs.");
   assert.strictEqual(def.textOf(def.partsOf({ t: "apart", a: 0, b: 1 })), "De vlam en de maan staan nooit naast elkaar.");
 });

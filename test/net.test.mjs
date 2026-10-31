@@ -302,3 +302,63 @@ test("reconnect na broker-herstart: presence opnieuw en subscriptions hersteld",
   await obs.publishState({ v: 1, code, phase: "lobby", updatedAt: Date.now() });
   await got.until((s) => s && s.phase === "lobby", 5000, "state na resubscribe");
 });
+
+test("offline-event: verbinding parkeren (LWT \"0\", geen pogingen) en bij online meteen terug", async () => {
+  const b = await broker();
+  const code = freshCode();
+  const list = [urlOf(b)];
+  const obs = await openRoom({ code, brokers: list }); // waarnemer zonder (nep-)window: blijft gewoon verbonden
+  const pres = collector();
+  obs.subscribePresence((pid, online) => pres.push({ pid, online }));
+  await sleep(100);
+
+  // Nep-browser: window met online/offline-events en navigator.onLine
+  const win = new EventTarget();
+  const nav = { onLine: true };
+  const prevNav = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+  globalThis.window = win;
+  Object.defineProperty(globalThis, "navigator", { value: nav, configurable: true, writable: true });
+  try {
+    const statuses = [];
+    let reconnects = 0;
+    const p = await openRoom({ code, pid: "off1", brokers: list, onStatus: (s) => statuses.push(s) });
+    p.onReconnect(() => reconnects++);
+    const got = collector();
+    p.subscribeState((s) => got.push(s));
+    await pres.until((x) => x.pid === "off1" && x.online, 3000, "presence 1");
+
+    nav.onLine = false;
+    win.dispatchEvent(new Event("offline"));
+    assert.equal(p.status, "offline");
+    await pres.until((x) => x.pid === "off1" && !x.online, 3000, "LWT 0 na offline");
+    await sleep(700); // geen herverbind-pogingen zolang het netwerk weg is
+    assert.equal(p.status, "offline");
+    assert.equal(p.connected, false);
+    assert.equal(await p.send({ t: "x" }), false, "versturen tijdens offline → false (outbox in ui.js houdt het vast)");
+
+    const back = collector();
+    obs.subscribePresence((pid, online) => back.push({ pid, online }));
+    nav.onLine = true;
+    win.dispatchEvent(new Event("online"));
+    await back.until((x) => x.pid === "off1" && x.online, 5000, "presence 1 na online");
+    assert.equal(p.status, "online");
+    assert.equal(reconnects, 1);
+    assert.deepEqual(statuses.slice(-3), ["offline", "reconnecting", "online"]);
+    await obs.publishState({ v: 1, code, phase: "lobby", updatedAt: Date.now() });
+    await got.until((s) => s && s.phase === "lobby", 5000, "state na herverbinden");
+
+    // Al offline bij het openen: wacht met verbinden tot het netwerk er is
+    nav.onLine = false;
+    const opening = DVNet.open({ mqtt, code, pid: "off2", brokers: list, timeoutMs: 6000 });
+    await sleep(500);
+    assert.ok(!back.items.some((x) => x.pid === "off2" && x.online), "geen verbinding zolang offline");
+    nav.onLine = true;
+    win.dispatchEvent(new Event("online"));
+    const p2 = await opening;
+    rooms.push(p2);
+    assert.equal(p2.status, "online");
+  } finally {
+    delete globalThis.window;
+    if (prevNav) Object.defineProperty(globalThis, "navigator", prevNav); else delete globalThis.navigator;
+  }
+});

@@ -91,6 +91,25 @@ test("score(): rondes gewonnen → blokken, met namen in de regels", () => {
   assert.strictEqual(def.score({ p0: { times: [200, 200, 200] }, p1: { times: [290, 290, 400] }, p2: { times: [400, 400, 400] } }, three).logs, 2);
 });
 
+test("score(): 2 tot 6 spelers, afwezigen in één regel, ook met lange namen", () => {
+  const six = ["Loek", "Jacques", "Sanne", "Mo", "Iris", "Daan"].map((name, i) => ({ pid: "p" + i, name }));
+  const all = def.score({}, { difficulty: 2, players: six });
+  checkScore(all);
+  assert.strictEqual(all.logs, -2);
+  assert.strictEqual(all.lines.filter((l) => l.includes("dutten")).length, 1);
+  assert.ok(all.lines.some((l) => l.startsWith("Loek, Jacques, Sanne, Mo, Iris en Daan zaten")));
+  const longs = six.map((p) => ({ pid: p.pid, name: p.name + " de Allerlangste Naam" }));
+  const two = def.score({ p0: { times: [200, 210, 220] } }, { difficulty: 1, players: longs });
+  checkScore(two);
+  assert.ok(two.lines.some((l) => l.startsWith("5 spelers zaten te dutten")));
+  // 6 spelers: 3 van de 6 moeten per ronde sneller zijn dan de Vorst (300)
+  const res = {};
+  six.forEach((p, i) => { res[p.pid] = { times: i < 3 ? [250, 250, 400] : [400, 400, 400] }; });
+  assert.strictEqual(def.score(res, { difficulty: 2, players: six }).logs, 2);
+  res.p2 = { times: [400, 250, 400] };
+  assert.strictEqual(def.score(res, { difficulty: 2, players: six }).logs, 1);
+});
+
 test("valid(): ruis wordt null, tijden worden gehele ms", () => {
   assert.strictEqual(def.valid(null), null);
   assert.strictEqual(def.valid({}), null);

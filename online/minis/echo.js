@@ -95,7 +95,8 @@
     });
     return out;
   }
-  const allSame = (words, pids, fuzzy) => pids.length > 0 && pids.every((p) => typeof words[p] === "string" && same(words[pids[0]], words[p], fuzzy));
+  // Iedereen gelijk: elk paar moet kloppen (bomen~boom en bomen~bom, maar boom≁bom).
+  const allSame = (words, pids, fuzzy) => pids.length > 0 && pids.every((p, i) => typeof words[p] === "string" && pids.slice(0, i).every((q) => same(words[q], words[p], fuzzy)));
   const clean = (w) => (typeof w === "string" ? w.replace(/\s+/g, " ").trim() : "");
 
   // ---------- Net-contract ----------
@@ -203,7 +204,9 @@
     const trail = Array.isArray(r.trail) ? r.trail.filter((x) => x && typeof x === "object") : [];
     return { success: r.success, rounds, telt: !!r.telt, gaveUp: !!r.gaveUp, word: typeof r.word === "string" ? r.word : null, trail };
   }
-  const logsFor = (v) => (v && v.success ? Math.max(1, 5 - v.rounds) : -1);
+  // Echte match in ronde N: max(1, 5−N). "Telt!" is een gunst van Gloei en levert één blok minder op (min. 1),
+  // anders is iedereen-tikt-Telt!-na-ronde-1 altijd de beste zet.
+  const logsFor = (v) => (v && v.success ? Math.max(1, 5 - v.rounds - (v.telt ? 1 : 0)) : -1);
   const joinNames = (a) => (a.length <= 1 ? a.join("") : a.slice(0, -1).join(", ") + " en " + a[a.length - 1]);
   const q = (w) => "«" + w + "»";
 
@@ -222,7 +225,7 @@
     let mvp = null;
     if (v.success) {
       if (v.telt) {
-        lines.push("Telt! In ronde " + v.rounds + " keurden jullie het samen goed.");
+        lines.push("Telt! In ronde " + v.rounds + " keurden jullie het samen goed. Gloei rekent één blok voor de gunst.");
         const ws = pids.filter((p) => typeof last[p] === "string").map((p) => nameOf(p) + " " + q(last[p]));
         if (ws.length) lines.push(joinNames(ws) + ". Gloei knijpt een oogje toe.");
       } else {
@@ -283,14 +286,16 @@
     radial-gradient(70% 40% at 50% 0%,rgba(90,120,170,.16),rgba(0,0,0,0) 70%),
     linear-gradient(180deg,#080a10,#0b0909 45%,var(--soot,#0b0705) 70%,#160c07)}
 .ec *{box-sizing:border-box}
-.ec-disp,.ec-btn,.ec-card .w,.ec-qw,.ec-big,.ec-hud b{font-variant-ligatures:none} /* "IJ" in LIJN mag geen ligatuur worden */
+.ec-disp,.ec-btn,.ec-card .w,.ec-qw,.ec-big,.ec-hud b,.ec-word,.ec-sum span,.ec-msg{font-variant-ligatures:none;font-feature-settings:"locl" 0,"liga" 0} /* "IJ" in LIJN niet als één glyph (Nederlandse locl) */
 .ec-disp{font-family:"Unbounded",system-ui,sans-serif;font-weight:900;letter-spacing:-.02em}
 .ec-fog{position:absolute;inset:0;z-index:1;pointer-events:none;opacity:var(--fog);transition:opacity 1.6s ease}
 .ec-fog i{position:absolute;left:-40%;right:-40%;height:62%;display:block;border-radius:50%;
-  background:radial-gradient(closest-side,rgba(178,200,228,.30),rgba(150,175,210,.12) 55%,rgba(150,175,210,0));animation:ec-drift 26s ease-in-out infinite alternate}
+  background:radial-gradient(closest-side,rgba(185,206,232,.42),rgba(150,175,210,.18) 55%,rgba(150,175,210,0));animation:ec-drift 26s ease-in-out infinite alternate}
 .ec-fog i:nth-child(1){top:-6%}
 .ec-fog i:nth-child(2){top:30%;animation-duration:34s;animation-delay:-9s;opacity:.8}
 .ec-fog i:nth-child(3){top:58%;animation-duration:22s;animation-delay:-4s;opacity:.65}
+.ec-fog::after{content:"";position:absolute;left:0;right:0;bottom:0;height:46%;background:linear-gradient(0deg,rgba(150,180,220,.34),rgba(150,180,220,0));animation:ec-creep 7s ease-in-out infinite alternate}
+@keyframes ec-creep{0%{transform:translateY(6%);opacity:.75}100%{transform:none;opacity:1}}
 @keyframes ec-drift{0%{transform:translateX(-14%) scaleY(.9)}100%{transform:translateX(14%) scaleY(1.1)}}
 .ec-edge{position:absolute;inset:0;z-index:1;pointer-events:none;
   box-shadow:inset 0 0 calc(40px + var(--fog)*90px) rgba(150,185,230,calc(var(--fog)*.45));transition:box-shadow 1.6s}
@@ -305,7 +310,7 @@
 .ec-hearth::after{content:"";position:absolute;left:6%;right:6%;bottom:0;height:24%;z-index:2;
   background:linear-gradient(180deg,#2a1d14 0 5px,rgba(0,0,0,0) 5px),repeating-linear-gradient(90deg,rgba(0,0,0,0) 0 13px,#1f1510 13px 20px);
   -webkit-mask:linear-gradient(180deg,#000 70%,rgba(0,0,0,.6));mask:linear-gradient(180deg,#000 70%,rgba(0,0,0,.6))}
-.ec.playing .ec-hearth{opacity:.55;transform:translateX(-50%) translateY(26%) scale(.9)}
+.ec.playing .ec-hearth{opacity:.92;transform:translateX(-50%) translateY(2%) scale(.86)}
 .ec.won .ec-hearth{opacity:1;transform:translateX(-50%) scale(1.12)}
 .ec-cssfire{position:absolute;inset:0}
 .ec-cssfire i{position:absolute;bottom:10%;left:50%;width:34%;height:70%;margin-left:-17%;border-radius:50% 50% 45% 45% / 70% 70% 30% 30%;
@@ -349,7 +354,8 @@
 .ec-hud{flex:none;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:max(14px,env(safe-area-inset-top)) 14px 4px}
 .ec-hud b{font:900 13px/1 "Unbounded",system-ui,sans-serif;padding:8px 12px;border-radius:99px;background:rgba(23,16,11,.72);border:1px solid rgba(255,194,71,.22);white-space:nowrap}
 .ec-hud b.last{color:#2a0d02;background:linear-gradient(180deg,var(--flame,#ffc247),var(--ember,#ff6a1a));border-color:transparent}
-.ec-who{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;min-width:0}
+.ec-who{display:flex;gap:6px;justify-content:flex-end;min-width:0}
+.ec-who.many{gap:3px}.ec-who.many .ec-dot{width:26px;height:26px;font-size:14px}
 .ec-dot{position:relative;width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:17px;
   background:rgba(23,16,11,.8);box-shadow:inset 0 0 0 2px rgba(184,169,154,.3);transition:box-shadow .3s,transform .3s}
 .ec-dot.in{box-shadow:inset 0 0 0 2px var(--c,#ffc247),0 0 12px var(--c,#ffc247)}
@@ -357,16 +363,20 @@
   color:#2a0d02;background:var(--flame,#ffc247)}
 .ec-dot.pop{animation:ec-dotpop .4s cubic-bezier(.3,1.8,.5,1)}
 @keyframes ec-dotpop{0%{transform:scale(.7)}100%{transform:scale(1)}}
-.ec-q{flex:none;padding:6px 18px 0;text-align:center}
+.ec-q{flex:none;padding:0 4px 8px;text-align:center}
 .ec-qk{font:800 11px/1.2 system-ui,sans-serif;letter-spacing:.18em;text-transform:uppercase;color:#9fc3ee}
 .ec-qw{margin-top:7px;font:900 clamp(19px,5.6vw,24px)/1.18 "Unbounded",system-ui,sans-serif;color:var(--glow,#ffe7b8);text-shadow:0 0 18px rgba(255,140,40,.35)}
 .ec-sum{display:flex;flex-wrap:wrap;justify-content:center;align-items:center;gap:6px 8px;margin-top:9px}
 .ec-sum span{max-width:100%;padding:7px 11px;border-radius:11px;font:900 15px/1.1 "Unbounded",system-ui,sans-serif;color:#2a1608;overflow-wrap:anywhere;
   background:radial-gradient(120% 140% at 0% 0%,#f6e3bf,#e8cc98 55%,#cfa86c);box-shadow:0 4px 14px rgba(0,0,0,.45)}
+.ec-sum.many span{padding:5px 8px;font-size:12px;border-radius:9px}
+.ec-sum.many{gap:4px 5px}
+.ec-sum.many b{font-size:13px}
 .ec-sum span.pair{box-shadow:0 0 0 2px var(--flame,#ffc247),0 0 16px rgba(255,194,71,.6)}
 .ec-sum b{font:900 16px/1 system-ui;color:var(--ash,#b8a99a)}
 .ec-sum b.eq{color:var(--flame,#ffc247);font-size:20px}
-.ec-mid{flex:1;min-height:0;display:flex;flex-direction:column;justify-content:center;gap:10px;padding:6px 14px;overflow-y:auto;touch-action:pan-y}
+.ec-mid{flex:1;min-height:0;display:flex;flex-direction:column;justify-content:center;gap:10px;padding:6px 14px 4px;overflow-y:auto;touch-action:pan-y}
+.ec-mid>:first-child{margin-top:auto}.ec-mid>:last-child{margin-bottom:auto}
 .ec-table{display:flex;flex-wrap:wrap;justify-content:center;gap:10px;perspective:900px}
 .ec-card{position:relative;flex:0 0 var(--cw,46%);max-width:170px;height:var(--chh,132px);touch-action:none}
 .ec-in3d{position:absolute;inset:0;transform-style:preserve-3d;transition:transform .7s cubic-bezier(.3,1.35,.5,1)}
@@ -391,13 +401,14 @@
   transition:background .5s,box-shadow .5s,filter .5s}
 .ec-front .w{font:900 var(--fs,22px)/1.1 "Unbounded",system-ui,sans-serif;overflow-wrap:anywhere;max-width:100%}
 .ec-front .nm{font:800 11px/1 system-ui,sans-serif;letter-spacing:.12em;text-transform:uppercase;color:rgba(42,22,8,.65)}
-.ec-card.cold .ec-front{filter:saturate(.35) brightness(.82);box-shadow:inset 0 0 0 1px rgba(90,169,255,.4),inset 0 0 26px rgba(90,169,255,.35),0 10px 24px rgba(0,0,0,.5)}
+.ec-card.cold .ec-front{filter:saturate(.55) brightness(.9);box-shadow:inset 0 0 0 1.5px rgba(159,211,255,.7),inset 0 0 34px rgba(90,169,255,.55),0 0 18px rgba(90,169,255,.25),0 10px 24px rgba(0,0,0,.5)}
 .ec-card.pair .ec-front{filter:none;box-shadow:inset 0 0 0 2px var(--ember,#ff6a1a),0 0 22px rgba(255,140,40,.55)}
 .ec-card.gold .ec-front{background:radial-gradient(circle at 50% 40%,#fff6dc,var(--flame,#ffc247) 55%,var(--ember,#ff6a1a));
   box-shadow:0 0 0 2px #fff3d0,0 0 40px rgba(255,194,71,.9),0 0 90px rgba(255,106,26,.6);animation:ec-gold .9s ease-out both}
 @keyframes ec-gold{0%{filter:brightness(1)}35%{filter:brightness(1.6)}100%{filter:brightness(1)}}
 .ec-msg{min-height:22px;text-align:center;font-size:15px;line-height:1.35;color:var(--glow,#ffe7b8)}
 .ec-msg.bad{color:#ff9a7a}.ec-msg.good{color:var(--flame,#ffc247)}.ec-msg.cold{color:#9fc3ee}
+.ec-msg.big{font:900 24px/1.1 "Unbounded",system-ui,sans-serif;color:var(--flame,#ffc247);text-shadow:0 0 20px rgba(255,140,40,.8)}
 .ec-msg.pop{animation:ec-in .35s cubic-bezier(.2,.9,.3,1.3)}
 @keyframes ec-in{0%{transform:translateY(6px);opacity:0}100%{transform:none;opacity:1}}
 .ec-trail{display:flex;flex-direction:column;gap:5px;align-items:center}
@@ -415,7 +426,7 @@
 .ec-quit.on{color:#9fc3ee}
 .ec-actnote{width:100%;text-align:center;font-size:12px;color:var(--ash,#b8a99a)}
 .ec-bottom{flex:none;position:relative;padding:10px 14px max(14px,env(safe-area-inset-bottom));
-  background:linear-gradient(180deg,rgba(11,7,5,0),rgba(11,7,5,.82) 30%,rgba(11,7,5,.92))}
+  background:linear-gradient(180deg,rgba(11,7,5,0),rgba(11,7,5,.35) 45%,rgba(11,7,5,.62))}
 .ec-timer{position:absolute;left:18px;right:18px;top:2px;height:4px;border-radius:4px;background:rgba(159,195,238,.15);overflow:hidden}
 .ec-timer i{position:absolute;inset:0;transform-origin:0 50%;background:linear-gradient(90deg,#9fc3ee,var(--blue,#5aa9ff))}
 .ec-timer.hot i{background:linear-gradient(90deg,var(--blaze,#e8401c),var(--ember,#ff6a1a))}
@@ -434,6 +445,7 @@
 .ec-lock{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:58px;padding:8px 8px 8px 16px;border-radius:18px;
   background:rgba(23,16,11,.88);border:1.5px solid rgba(255,194,71,.55);box-shadow:0 0 24px rgba(255,140,40,.2)}
 .ec-lock div{min-width:0;text-align:left}
+.ec-lock.pending{border-style:dashed;box-shadow:none}.ec-lock.pending strong{opacity:.7}
 .ec-lock small{display:block;font:700 11px/1 system-ui,sans-serif;letter-spacing:.14em;text-transform:uppercase;color:var(--ash,#b8a99a)}
 .ec-lock strong{display:block;margin-top:4px;font:900 18px/1.15 "Unbounded",system-ui,sans-serif;color:var(--flame,#ffc247);overflow-wrap:anywhere}
 .ec-lock button{appearance:none;cursor:pointer;flex:none;min-height:42px;padding:0 14px;border-radius:12px;border:1px solid rgba(255,231,184,.18);
@@ -444,7 +456,7 @@
 .ec-res{z-index:6;justify-content:flex-start;gap:4px;padding-top:max(34px,env(safe-area-inset-top));overflow-y:auto;touch-action:pan-y;
   background:linear-gradient(180deg,rgba(8,6,6,.9),rgba(11,7,5,.7) 55%,rgba(11,7,5,.15));animation:ec-fade .6s ease-out both}
 @keyframes ec-fade{from{opacity:0}to{opacity:1}}
-.ec-big{font-size:clamp(46px,15vw,70px);line-height:.92;margin:8px 0 6px;
+.ec-big{font-size:clamp(46px,15vw,70px);line-height:1.04;margin:2px 0 4px;padding:.12em .04em 0;
   background:linear-gradient(180deg,#fffaf0,var(--flame,#ffc247) 45%,var(--ember,#ff6a1a) 80%,var(--blaze,#e8401c));-webkit-background-clip:text;background-clip:text;color:transparent;
   filter:drop-shadow(0 0 26px rgba(255,106,26,.65));animation:ec-slam .9s cubic-bezier(.2,1.6,.4,1) both}
 .ec-big.cold{background:linear-gradient(180deg,#f2f8ff,#9fd3ff 50%,var(--blue,#5aa9ff));-webkit-background-clip:text;background-clip:text;filter:drop-shadow(0 0 22px rgba(90,169,255,.45))}
@@ -452,6 +464,7 @@
 .ec-word{margin:6px 0 4px;padding:12px 22px;border-radius:18px;max-width:100%;font:900 clamp(22px,7vw,32px)/1.1 "Unbounded",system-ui,sans-serif;color:#2a0d02;overflow-wrap:anywhere;
   background:radial-gradient(circle at 50% 40%,#fff6dc,var(--flame,#ffc247) 55%,var(--ember,#ff6a1a));box-shadow:0 0 0 2px #fff3d0,0 0 44px rgba(255,194,71,.8);
   animation:ec-pop .7s .35s cubic-bezier(.3,1.7,.5,1) both}
+.ec-word.long{font-size:clamp(15px,4.6vw,20px);padding:10px 16px}
 @keyframes ec-pop{0%{transform:scale(.3);opacity:0}100%{transform:none;opacity:1}}
 .ec-sub{font-size:15px;color:var(--glow,#ffe7b8)}
 .ec-sub b{color:var(--flame,#ffc247)}
@@ -470,7 +483,8 @@
 .ec-flash.cold{background:radial-gradient(circle,rgba(159,195,238,0) 30%,rgba(159,195,238,.4))}
 @keyframes ec-flashk{0%{opacity:1}100%{opacity:0}}
 @media (max-height:700px){.ec-card{--chh:108px}.ec-qw{font-size:18px}.ec-hearth{height:min(26%,190px)}}
-@media (prefers-reduced-motion:reduce){.ec-fog i,.ec-demo span,.ec-dots i,.ec-wait i,.ec-cssfire i,.ec-big,.ec-word{animation:none}.ec-in3d{transition-duration:.01s}}
+@media (prefers-reduced-motion:reduce){.ec-fog i,.ec-fog::after,.ec-demo span,.ec-dots i,.ec-wait i,.ec-cssfire i,.ec-big,.ec-word,.ec-ring,.ec-dot.pop,.ec-msg.pop,.ec-form.shake,.ec-card.gold .ec-front,.ec .mini-countdown.pop{animation:none}
+  .ec-ring{display:none}.ec-flash{animation-duration:.3s}.ec-in3d{transition-duration:.01s}.ec-hearth,.ec-fog,.ec-edge{transition:none}}
 `;
 
   function injectCss() {
@@ -510,7 +524,9 @@
     const root = h("div", "ec");
     el.appendChild(root);
     let dead = false, phase = "howto", raf = 0, tick = 0, busy = false, seen = v ? v.rounds.length : 0, roundT0 = 0, autoSent = -1;
-    let sending = false;
+    // Optimistische invoer: pend = net verstuurd woord (nog geen echo van de host), unlocking = "Wijzig" getikt.
+    let sending = false, pend = null, unlocking = false, sendTok = 0;
+    const myWord = () => (pend || (unlocking || !v ? null : v.mine));
     const timers = new Set();
     const later = (fn, ms) => { const t = setTimeout(() => { timers.delete(t); if (!dead) fn(); }, ms); timers.add(t); };
     const offs = [];
@@ -549,7 +565,8 @@
       const r = root.getBoundingClientRect();
       dpr = Math.min(2, window.devicePixelRatio || 1);
       W = Math.max(1, r.width); H = Math.max(1, r.height);
-      cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
+      const cw = Math.round(W * dpr), ch = Math.round(H * dpr);
+      if (cv.width !== cw || cv.height !== ch) { cv.width = cw; cv.height = ch; }
       layoutCards();
     }
     function frame(ts) {
@@ -592,7 +609,7 @@
     const chip = (t, cold) => chips.appendChild(h("span", "ec-chip" + (cold ? " cold" : ""), t));
     chip(max ? "🔁 " + max + " rondes" : "🔁 Onbeperkt rondes");
     chip("🙅 Eigen woord niet herhalen");
-    chip("🤝 Iedereen op Telt! = goed");
+    chip("🤝 Allemaal Telt! = goed (1 blok minder)");
     if (c.fuzzy) chip("✏️ Tikfoutje mag");
     if (limit) chip("⏳ " + limit + " s per ronde", true);
     if (c.fog) chip("🌫️ De Mist vreet oude woorden", true);
@@ -606,7 +623,7 @@
     const play = h("div", "ec-play");
     const hud = h("div", "ec-hud");
     const roundEl = h("b", null, "");
-    const who = h("div", "ec-who");
+    const who = h("div", "ec-who" + (pids.length > 4 ? " many" : ""));
     const dotOf = {};
     pids.forEach((p) => { const x = h("span", "ec-dot", P(p).avatar || "🙂"); x.style.setProperty("--c", P(p).color || "#ffc247"); x.title = P(p).name; who.appendChild(x); dotOf[p] = x; });
     hud.append(roundEl, who);
@@ -614,9 +631,10 @@
     const mid = h("div", "ec-mid");
     const table = h("div", "ec-table");
     const msg = h("div", "ec-msg");
+    msg.setAttribute("role", "status");
     const act = h("div", "ec-act");
     const trail = h("div", "ec-trail");
-    mid.append(table, msg, act, trail);
+    mid.append(qEl, table, msg, act, trail);
     const bottom = h("div", "ec-bottom");
     const timerEl = h("div", "ec-timer");
     const timerBar = h("i");
@@ -642,9 +660,10 @@
     undoBtn.type = "button";
     lockEl.append(lockTxt, undoBtn);
     const hint = h("div", "ec-hint");
+    hint.setAttribute("aria-live", "polite");
     if (limit) bottom.appendChild(timerEl);
     bottom.append(form, lockEl, hint);
-    play.append(hud, qEl, mid, bottom);
+    play.append(hud, mid, bottom);
 
     function say(text, cls) {
       msg.textContent = text || ""; msg.className = "ec-msg" + (cls ? " " + cls : "");
@@ -680,17 +699,26 @@
       table.style.setProperty("--cw", cw + "px");
       const rows = Math.ceil(n / cols);
       const hh = root.clientHeight || 700;
-      table.style.setProperty("--chh", Math.max(78, Math.min(rows > 1 ? 104 : 140, Math.floor((hh * 0.34) / rows) - 6)) + "px");
+      table.style.setProperty("--chh", Math.max(78, Math.min(rows > 1 ? 112 : 180, Math.floor((hh * (rows > 1 ? 0.34 : 0.24)) / rows) - 6)) + "px");
     }
     function thinking(node) { node.textContent = ""; const s = h("span", "ec-dots"); s.append(h("i"), h("i"), h("i")); node.appendChild(s); }
     function renderCards() {
       const sub = v ? v.submitted : [];
       pids.forEach((p) => {
-        const k = cards[p], isIn = sub.includes(p);
+        const k = cards[p];
+        let isIn = sub.includes(p);
         k.card.className = "ec-card" + (isIn ? " in" : "");
-        if (v && v.final) { k.st.textContent = ""; k.mine.textContent = ""; return; }
+        if (v && v.final) {
+          // Laatste kans: de laatste woorden blijven bevroren omgedraaid liggen.
+          const w = (v.rounds[v.rounds.length - 1] || { words: {} }).words[p] || "…";
+          k.fw.textContent = w; k.fw.style.setProperty("--fs", fontFor(w) + "px");
+          k.card.className = "ec-card flip cold"; k.mine.textContent = "";
+          return;
+        }
+        const mw = p === me ? myWord() : null;
+        if (p === me) { isIn = !!mw; k.card.classList.toggle("in", isIn); }
         if (isIn) k.st.textContent = p === me ? "Ingeleverd" : "Klaar ✓"; else if (p === me) k.st.textContent = "Jouw beurt"; else thinking(k.st);
-        k.mine.textContent = p === me && v && v.mine ? v.mine : "";
+        k.mine.textContent = mw || "";
       });
     }
 
@@ -700,7 +728,7 @@
       roundEl.className = v.final || (max && n === max - 1) ? "last" : "";
       roundEl.textContent = v.final ? "Laatste kans" : "Ronde " + Math.min(n + 1, max || n + 1) + (max ? " / " + max : "");
       pids.forEach((p) => {
-        const was = dotOf[p].classList.contains("in"), isIn = v.submitted.includes(p);
+        const was = dotOf[p].classList.contains("in"), isIn = p === me ? !!myWord() : v.submitted.includes(p);
         dotOf[p].classList.toggle("in", isIn);
         if (isIn && !was) { dotOf[p].classList.remove("pop"); void dotOf[p].offsetWidth; dotOf[p].classList.add("pop"); }
       });
@@ -715,7 +743,7 @@
         return;
       }
       qEl.appendChild(h("div", "ec-qk", v.final ? "De Mist wacht op jullie oordeel" : "Welk woord verbindt deze?"));
-      const sum = h("div", "ec-sum");
+      const sum = h("div", "ec-sum" + (pids.length > 3 || Object.values(lastR.words).join("").length > 26 ? " many" : ""));
       const inPair = new Set((lastR.groups || []).flat());
       const ws = pids.filter((p) => typeof lastR.words[p] === "string");
       ws.forEach((p, i) => {
@@ -741,37 +769,45 @@
       return trail;
     }
 
-    let teltBtn = null, quitBtn = null;
+    // Telt!/Opgeven: één keer gebouwd (geen nieuwe listeners per update), daarna alleen bijgewerkt.
+    const teltBtn = h("button", "ec-telt"), teltN = h("small");
+    teltBtn.type = "button";
+    teltBtn.append(document.createTextNode("Telt!"), teltN);
+    const quitBtn = h("button", "ec-quit");
+    quitBtn.type = "button";
+    const actNote = h("div", "ec-actnote");
+    act.append(teltBtn, quitBtn, actNote);
+    on(teltBtn, "click", () => { if (busy || !v) return; beep(880, 0.05, "triangle", 0.06); buzz(10); ctx.send({ t: "telt", on: !v.telt.includes(me) }); });
+    on(quitBtn, "click", () => { if (busy || !v) return; beep(260, 0.06, "sine", 0.05); ctx.send({ t: "quit", on: !v.quit.includes(me) }); });
     function renderAct() {
-      act.textContent = "";
-      teltBtn = quitBtn = null;
-      if (!v || v.done || !isPlayer) return;
-      const lastR = v.rounds[v.rounds.length - 1];
-      if (!lastR || lastR.match) return;
+      const lastR = v && v.rounds[v.rounds.length - 1];
+      const show = !!(v && !v.done && isPlayer && lastR && !lastR.match && !busy);
+      act.style.display = show ? "" : "none";
+      if (!show) return;
       const n = pids.length;
-      teltBtn = h("button", "ec-telt" + (v.telt.includes(me) ? " on" : ""));
-      teltBtn.type = "button";
-      teltBtn.append(document.createTextNode("Telt!"), h("small", null, v.telt.length + "/" + n));
-      quitBtn = h("button", "ec-quit" + (v.quit.includes(me) ? " on" : ""), v.final ? "De Mist wint" : "Opgeven " + v.quit.length + "/" + n);
-      quitBtn.type = "button";
-      act.append(teltBtn, quitBtn);
+      teltBtn.className = "ec-telt" + (v.telt.includes(me) ? " on" : "");
+      teltBtn.setAttribute("aria-pressed", String(v.telt.includes(me)));
+      teltN.textContent = v.telt.length + "/" + n;
+      quitBtn.className = "ec-quit" + (v.quit.includes(me) ? " on" : "");
+      quitBtn.textContent = v.final ? "De Mist wint" : "Opgeven " + v.quit.length + "/" + n;
       const votes = v.telt.filter((p) => p !== me).map((p) => P(p).name);
-      act.appendChild(h("div", "ec-actnote", votes.length ? joinNames(votes) + " vind" + (votes.length > 1 ? "en" : "t") + " dat het telt." : v.final ? "Bedoelden jullie hetzelfde? Tik allemaal op Telt!" : "Zelfde bedoeld? Als iedereen op Telt! tikt, telt het."));
-      on(teltBtn, "click", () => { if (busy) return; beep(880, 0.05, "triangle", 0.06); buzz(10); ctx.send({ t: "telt", on: !v.telt.includes(me) }); });
-      on(quitBtn, "click", () => { if (busy) return; beep(260, 0.06, "sine", 0.05); ctx.send({ t: "quit", on: !v.quit.includes(me) }); });
+      actNote.textContent = votes.length ? joinNames(votes) + " vind" + (votes.length > 1 ? "en" : "t") + " dat het telt."
+        : v.final ? "Bedoelden jullie hetzelfde? Tik allemaal op Telt!" : "Bijna hetzelfde bedoeld? Tikt iedereen Telt!, dan telt het (1 blok minder).";
     }
 
     function renderInput() {
-      const open = isPlayer && v && !v.done && !v.final && !v.mine && !busy;
+      const mw = myWord();
+      const open = isPlayer && v && !v.done && !v.final && !mw && !busy;
       form.style.display = open ? "" : "none";
-      lockEl.style.display = isPlayer && v && v.mine && !v.final ? "" : "none";
+      lockEl.style.display = isPlayer && v && mw && !v.final && !busy ? "" : "none";
       timerEl.style.display = limit && open ? "" : "none";
-      if (v && v.mine) lockWord.textContent = v.mine;
+      if (mw) lockWord.textContent = mw;
+      lockEl.classList.toggle("pending", !!pend);
       sendBtn.disabled = sending;
       if (!isPlayer) setHint("Je kijkt mee.");
       else if (v && v.final) setHint("");
-      else if (v && v.mine) {
-        const wait = pids.filter((p) => !v.submitted.includes(p)).map((p) => P(p).name);
+      else if (mw) {
+        const wait = pids.filter((p) => p !== me && !v.submitted.includes(p)).map((p) => P(p).name);
         setHint(wait.length ? "Wachten op " + joinNames(wait) + "…" : "");
       } else if (!hint.classList.contains("bad")) setHint(v && v.rounds.length ? "Niet je eigen eerdere woorden herhalen." : others.length ? "Zelfde woord als " + joinNames(others) + "?" : "");
     }
@@ -785,39 +821,51 @@
     }
 
     function newRound() {
-      roundT0 = Date.now(); autoSent = -1;
-      pids.forEach((p) => { cards[p].card.classList.remove("flip", "cold", "pair", "gold"); cards[p].fw.textContent = ""; });
+      roundT0 = Date.now(); autoSent = -1; pend = null; unlocking = false;
+      // Woorden laten staan: anders draaien lege voorkanten terug. reveal() zet ze opnieuw.
+      pids.forEach((p) => cards[p].card.classList.remove("flip", "cold", "pair", "gold"));
     }
 
     function submit(auto) {
-      if (phase !== "play" || busy || !v || v.mine || v.final || v.done || sending) return;
+      if (phase !== "play" || busy || !v || myWord() || v.final || v.done || sending) return;
       const w = clean(input.value);
       const bad = (t) => { setHint(t, true); form.classList.remove("shake"); void form.offsetWidth; form.classList.add("shake"); buzz(30); beep(180, 0.08, "square", 0.04); };
       if (!w || !normalize(w)) { if (!auto) bad("Typ eerst een woord."); return; }
       const ui = (v.used || []).findIndex((u) => same(u, w, false));
       if (ui >= 0) { bad("Dat zei je al: «" + v.used[ui] + "». Iets nieuws!"); return; }
       setHint("");
-      sending = true;
-      later(() => { sending = false; renderInput(); }, 3000);
+      // Meteen vastzetten (geen leeg veld tijdens netwerkvertraging); komt de host niet terug, dan krijg je je woord terug.
+      sending = true; pend = w; unlocking = false;
+      const tok = ++sendTok, round = v.rounds.length;
+      later(() => {
+        if (tok !== sendTok || !sending) return;
+        sending = false; pend = null;
+        if (v && !v.mine && !v.done && v.rounds.length === round) { input.value = w; setHint("Niet aangekomen. Nog een keer?", true); }
+        renderInput(); renderCards();
+      }, 3000);
       beep(620, 0.06, "triangle", 0.07); beep(930, 0.08, "triangle", 0.05); buzz(12);
-      ctx.send({ t: "word", w });
       input.value = "";
       if (input.blur) input.blur();
+      renderInput(); renderCards();
+      ctx.send({ t: "word", w });
     }
     on(form, "submit", (e) => { e.preventDefault(); submit(false); });
     on(input, "input", () => { if (hint.classList.contains("bad")) { setHint(""); renderInput(); } });
     on(undoBtn, "click", () => {
-      if (!v || !v.mine || busy) return;
-      input.value = v.mine;
+      const w = myWord();
+      if (!v || !w || busy || v.final || v.done) return;
+      sendTok++; sending = false; pend = null; unlocking = true;
+      input.value = w;
+      renderInput(); renderCards();
+      try { input.focus({ preventScroll: true }); } catch (e) { /* oud toestel */ } // binnen het gebaar: toetsenbord gaat open
       ctx.send({ t: "unword" });
       beep(440, 0.04, "sine", 0.04);
-      later(() => { if (form.style.display !== "none") input.focus(); }, 30);
     });
 
     // --- Onthulling: alle kaarten tegelijk om ---
     function reveal(r, done) {
       busy = true;
-      renderHud();
+      pids.forEach((p) => dotOf[p].classList.add("in"));
       pids.forEach((p) => {
         const k = cards[p], w = r.words[p];
         k.fw.textContent = typeof w === "string" ? w : "…";
@@ -825,7 +873,7 @@
         k.card.classList.add("in");
         k.st.textContent = "Klaar ✓"; k.mine.textContent = "";
       });
-      form.style.display = "none"; lockEl.style.display = "none"; timerEl.style.display = "none"; act.textContent = "";
+      form.style.display = "none"; lockEl.style.display = "none"; timerEl.style.display = "none"; act.style.display = "none";
       setHint("");
       say("Iedereen heeft gekozen…", "");
       later(() => {
@@ -835,7 +883,9 @@
       later(() => {
         if (r.match) {
           pids.forEach((p) => cards[p].card.classList.add("gold"));
-          say("OP ÉÉN LIJN!", "good");
+          say("OP ÉÉN LIJN!", "big");
+          mood();
+          if (flame && flame.burst) { try { flame.burst(); } catch (e) { /* stil */ } }
           const pt = relOf(table);
           burst(pt.x, pt.y, reduced ? 30 : 140, false);
           [523, 659, 784, 1047, 1319].forEach((f, i) => later(() => beep(f, 0.16, "triangle", 0.08), i * 90));
@@ -845,6 +895,7 @@
           pids.forEach((p) => cards[p].card.classList.add(inPair.has(p) ? "pair" : "cold"));
           say(inPair.size ? "Bijna! " + joinNames([...inPair].map((p) => P(p).name)) + " zitten op één lijn." : "Niet op één lijn… de Mist wordt dikker.", "cold");
           beep(196, 0.35, "sine", 0.06); beep(147, 0.5, "sine", 0.05); buzz([40, 30, 40]);
+          mood(); // mist dikker, vuur zakt: meteen voelbaar
           const fl = h("div", "ec-flash cold"); root.appendChild(fl); later(() => fl.remove(), 1200);
           const pt = relOf(table);
           burst(pt.x, pt.y, reduced ? 6 : 26, true);
@@ -884,15 +935,22 @@
       res.appendChild(h("div", "ec-kicker", dn.success ? (dn.telt ? "Telt! · De Mist trekt op" : "De Mist trekt op") : dn.gaveUp ? "Opgegeven" : "De Mist blijft hangen"));
       res.appendChild(h("div", "ec-big ec-disp" + (dn.success ? "" : " cold"), dn.success ? "OP ÉÉN LIJN!" : "DE MIST WINT"));
       const lastW = dn.trail[dn.trail.length - 1] || {};
-      if (dn.success) res.appendChild(h("div", "ec-word", dn.telt ? pids.map((p) => lastW[p]).filter(Boolean).join(" = ") : dn.word || ""));
+      if (dn.success) {
+        // Bij Telt! elk (genormaliseerd) woord één keer: "sneeuw = ijs", niet "sneeuw = ijs = sneeuw".
+        const uniq = [];
+        pids.map((p) => lastW[p]).filter(Boolean).forEach((w) => { if (!uniq.some((u) => normalize(u) === normalize(w))) uniq.push(w); });
+        const wt = dn.telt ? uniq.join(" = ") : dn.word || "";
+        res.appendChild(h("div", "ec-word" + (wt.length > 14 ? " long" : ""), wt));
+      }
       const lg = logsFor(valid(dn));
       const sub = h("div", "ec-sub" + (dn.success ? "" : " cold"));
-      sub.appendChild(document.createTextNode(dn.success ? (dn.rounds === 1 ? "In één keer! · " : "In ronde " + dn.rounds + " · ") : dn.rounds + (dn.rounds === 1 ? " ronde · " : " rondes · ")));
-      sub.appendChild(h("b", null, (lg > 0 ? "+" + lg + " " + (lg === 1 ? "blok" : "blokken") + " " + "🪵".repeat(lg) : lg + " blok")));
+      sub.appendChild(document.createTextNode(dn.success ? (dn.telt ? "Telt! in ronde " + dn.rounds + " · " : dn.rounds === 1 ? "In één keer! · " : "In ronde " + dn.rounds + " · ") : dn.rounds + (dn.rounds === 1 ? " ronde · " : " rondes · ")));
+      sub.appendChild(h("b", null, (lg > 0 ? "+" + lg + " " + (lg === 1 ? "blok" : "blokken") + " " + "🪵".repeat(lg) : "−" + Math.abs(lg) + " blok")));
       res.appendChild(sub);
       if (dn.trail.length) res.appendChild(renderTrail(dn.trail.map((w) => ({ words: w })), true));
       res.appendChild(h("div", "ec-quip", dn.success
-        ? (dn.rounds <= 2 ? "Gloei: \"Echte stemmen! De Mist kan alles nadoen, behalve dít.\"" : "Gloei: \"Hè hè. Even dacht ik dat jullie zelf ook nep waren.\"")
+        ? dn.telt ? "Gloei: \"Vooruit, ik knijp een oogje toe. Maar de Mist lacht er stiekem om.\""
+        : (dn.rounds <= 2 ? "Gloei: \"Echte stemmen! De Mist kan alles nadoen, behalve dít.\"" : "Gloei: \"Hè hè. Even dacht ik dat jullie zelf ook nep waren.\"")
         : "Gloei: \"Brr. Hou me vast, mannen. Ik word er klein van.\""));
       const w = h("div", "ec-wait"); w.appendChild(h("i")); w.appendChild(document.createTextNode("Klaar! Wachten op de rest…"));
       res.appendChild(w);
@@ -907,7 +965,7 @@
       let lastSec = -1;
       tick = setInterval(() => {
         if (dead || phase !== "play" || !v || v.done || v.final || busy) return;
-        if (v.mine) { timerBar.style.transform = "scaleX(1)"; return; }
+        if (myWord()) { timerBar.style.transform = "scaleX(1)"; return; }
         const left = limit * 1000 - (Date.now() - roundT0);
         timerBar.style.transform = "scaleX(" + Math.max(0, left / (limit * 1000)).toFixed(3) + ")";
         timerEl.classList.toggle("hot", left < 8000);
@@ -954,6 +1012,9 @@
     fit();
     mood();
     on(window, "resize", fit);
+    // Ook als de host de container van maat verandert (rotatie, toetsenbord, paneel) zonder window-resize.
+    let ro = null;
+    if (typeof ResizeObserver === "function") { ro = new ResizeObserver(() => { if (!dead) fit(); }); ro.observe(root); offs.push(() => ro.disconnect()); }
 
     // Terugkomen na herladen: al bezig of klaar → meteen naar het spel.
     if (v && (v.done || v.mine || v.rounds.length)) { how.remove(); enterPlay(); }
@@ -969,17 +1030,19 @@
         if (phase !== "play") { if (phase === "howto" && v.done) { how.remove(); enterPlay(); } else seen = v.rounds.length; return; }
         if (v.rounds.length > seen) {
           seen = v.rounds.length;
-          sending = false;
+          sendTok++; sending = false; pend = null; unlocking = false;
           reveal(v.rounds[v.rounds.length - 1], !!v.done);
           return;
         }
         if (busy) return;
-        if (v.mine !== (prev && prev.mine)) sending = false;
+        // Host bevestigt: optimistische toestand loslaten.
+        if (typeof v.mine === "string") { if (pend) sendTok++; sending = false; pend = null; }
+        if (unlocking && !v.mine) unlocking = false;
         if (v.done) { renderAll(); finish(); return; }
         renderHud(); renderCards(); renderAct(); renderInput();
         // iemand anders leverde in: zacht tikje
-        const was = prev ? prev.submitted.length : 0;
-        if (v.submitted.length > was && !(v.mine && !(prev && prev.mine))) { beep(1200, 0.02, "sine", 0.03); buzz(6); }
+        const others = (x) => (x ? x.submitted.filter((p) => p !== me).length : 0);
+        if (others(v) > others(prev)) { beep(1200, 0.02, "sine", 0.03); buzz(6); }
       },
       destroy() {
         dead = true;

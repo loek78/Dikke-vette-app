@@ -2,6 +2,8 @@
 // Draai: node --test online/minis/__tests__/story-content.test.js
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
 const story = require("../../story.js");
 
 const MINI_IDS = ["blaasbalg", "bijl", "vonken", "slot", "echo", "snel", "verhaal"];
@@ -15,11 +17,11 @@ const STEP_KEYS = {
   mini: ["type", "id", "difficulty", "intro", "win", "meh", "lose", "if"],
   fire: ["type", "delta", "line", "if"],
 };
-// Mogelijke blokken per minigame (SPEC-3 §5), om alle paden door het verhaal te lopen.
+// Mogelijke blokken per minigame (score() in online/minis/<id>.js), om alle paden door het verhaal te lopen.
 const range = (a, b) => Array.from({ length: b - a + 1 }, (_, i) => a + i);
 const MINI_LOGS = {
-  blaasbalg: range(-1, 3), bijl: range(-1, 4), vonken: range(-2, 3), slot: range(-1, 4),
-  echo: [-1, 1, 2, 3, 4], snel: range(0, 3), verhaal: range(1, 3),
+  blaasbalg: range(-1, 3), bijl: range(-1, 4), vonken: range(-2, 3), slot: [-1, 1, 2, 3, 4],
+  echo: [-1, 1, 2, 3, 4], snel: [-2, -1, 1, 2, 3, 4], verhaal: range(1, 3),
 };
 
 const isInt = Number.isInteger;
@@ -304,8 +306,81 @@ test("running gags komen terug", () => {
   assert.ok(perChapter(/kleed/i) >= 4, "het oude kleed");
   assert.ok(perChapter(/die fles/) >= 2, "die fles");
   assert.ok(perChapter(/houtmand/) >= 3, "de lege houtmand");
+  assert.ok(perChapter(/Henk/) >= 4, "Henk, de spin in de houtmand");
   assert.ok(perChapter(/beleefd|dank u|neemt u|denkt u|als het u schikt/i) >= 3, "de beleefde Vorst");
   assert.ok(/Vlammetje/.test(JSON.stringify(story.endings.find((e) => e.id === "legende"))), "Gloei's geheim");
+});
+
+test("setups worden ingelost", () => {
+  const steps = (chId) => story.chapters.find((ch) => ch.id === chId).steps;
+  const text = (st) => JSON.stringify(st);
+  const has = (chId, flag, eq, re) => steps(chId).some((st) => st.if && st.if.flag === flag && st.if.eq === eq && re.test(text(st)));
+  // Die fles is voor later; wie wacht, hoort bij dageraad dat het later is.
+  assert.match(text(steps("proloog")), /die fles.*voor later/, "die fles wordt neergezet");
+  assert.ok(has("dageraad", "fles", "later", /Het is later/), "die fles: ‘Het is later.’");
+  // Gloei noemt de kantlijn van het Wachtboek laster; bij daglicht staan daar de aantekeningen.
+  assert.ok(has("kist", "kist", "boek", /kantlijn/), "het Wachtboek: de kantlijn wordt genoemd");
+  assert.ok(has("dageraad", "kist", "boek", /‘1\d{3}:/), "het Wachtboek: de aantekeningen bij dageraad");
+  // Wie opendoet, hoort wanneer de Vorst terugkomt, en dan komt hij ook.
+  assert.ok(has("aanbod", "aanbod", "ja", /vier uur/i), "de Vorst zegt wanneer hij terugkomt");
+  const terug = steps("wolf").find((st) => st.type === "fire" && st.if && st.if.flag === "aanbod" && st.if.eq === "ja");
+  assert.ok(terug && terug.delta < 0 && terug.line.who === "vorst", "om 04:00 haalt de Vorst zelf zijn deel op");
+  // {B} zegt ‘vlammetje’ om 20:00; in Legende blijkt dat Gloei's echte naam.
+  assert.ok(steps("proloog")[0].lines.some((l) => l.who === "B" && /vlammetje/i.test(l.text)), "{B} zegt vlammetje");
+  assert.match(text(story.endings.find((e) => e.id === "legende")), /\{B\}/, "Legende komt terug op {B}");
+});
+
+test("{A} en {B} krijgen evenveel regels en worden even vaak geplaagd", () => {
+  const lines = allLines();
+  const n = (who) => lines.filter((l) => l.who === who).length;
+  assert.equal(n("A"), n("B"), `regels: {A} ${n("A")}, {B} ${n("B")}`);
+  const all = allTexts().map(([, t]) => t).join("\n");
+  const named = (p) => all.split(`{${p}}`).length - 1;
+  assert.equal(named("A"), named("B"), `genoemd: {A} ${named("A")}×, {B} ${named("B")}×`);
+  const plaag = (p) => lines.filter((l) => l.who === "gloei" && l.text.includes(`{${p}}`)).length;
+  assert.ok(plaag("A") >= 2 && plaag("B") >= 2, `Gloei spreekt {A} ${plaag("A")}× en {B} ${plaag("B")}× aan`);
+  // Ook op elk pad (elke combinatie van keuzes) precies gelijk op; een einde mag er één de hoofdrol geven.
+  const count = (texts, whos) => {
+    let d = 0, m = 0;
+    for (const l of whos) d += l.who === "A" ? 1 : l.who === "B" ? -1 : 0;
+    for (const t of texts) m += (t.split("{A}").length - 1) - (t.split("{B}").length - 1);
+    return [d, m];
+  };
+  const flagSets = [{}];
+  for (const { st } of allSteps()) {
+    if (st.type !== "choice") continue;
+    const next = [];
+    for (const f of flagSets) for (const o of st.options) next.push(Object.assign({}, f, o.set));
+    flagSets.splice(0, flagSets.length, ...next);
+  }
+  for (const flags of flagSets) {
+    const shown = [...allSteps()].map(({ st }) => st).filter((st) => !st.if || !st.if.flag || passes(st.if, { flags }));
+    const ls = shown.flatMap((st) => (st.lines || []).concat(st.line ? [st.line] : []));
+    const ts = ls.map((l) => l.text).concat(shown.flatMap((st) => [st.prompt, st.intro, st.win, st.meh, st.lose].filter(Boolean)));
+    const [d, m] = count(ts, ls);
+    assert.ok(d === 0 && m === 0, `pad ${JSON.stringify(flags)}: regels ${d}, genoemd ${m} (A−B)`);
+  }
+  for (const e of story.endings) {
+    const [d, m] = count(e.lines.map((l) => l.text), e.lines);
+    assert.ok(Math.abs(d) <= 1 && Math.abs(m) <= 1, `einde ${e.id}: regels ${d}, genoemd ${m} (A−B)`);
+  }
+});
+
+test("de regels bij een minigame herhalen niet wat de minigame zelf al zegt", () => {
+  // Het uitslagscherm toont de win/meh/lose-regel naast de eigen tekst van de minigame (score().lines, eindscherm,
+  // howto). Vier woorden op een rij gelijk = dezelfde grap twee keer.
+  const words = (t) => t.replace(/\{[A-Z]+\}/g, " ").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase()
+    .replace(/[^a-z]+/g, " ").trim().split(" ").filter(Boolean);
+  const grams = (t) => { const w = words(t); return w.slice(0, Math.max(0, w.length - 3)).map((_, i) => w.slice(i, i + 4).join(" ")); };
+  for (const { st, at } of allSteps()) {
+    if (st.type !== "mini") continue;
+    const src = fs.readFileSync(path.join(__dirname, "..", st.id + ".js"), "utf8");
+    const own = new Set((src.match(/"(?:[^"\\\n]|\\.)*"/g) || []).flatMap((q) => grams(q.slice(1, -1))));
+    for (const k of ["intro", "win", "meh", "lose"]) {
+      const dubbel = grams(st[k]).filter((g) => own.has(g));
+      assert.deepEqual(dubbel, [], `${at}.${k} herhaalt ${st.id}.js: ‘${dubbel.join("’, ‘")}’`);
+    }
+  }
 });
 
 // ---------- Flags en paden ----------

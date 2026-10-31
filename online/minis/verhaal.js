@@ -60,7 +60,7 @@
   const round2 = (x) => Math.round(x * 100) / 100;
   const mean = (a) => (a.length ? a.reduce((s, x) => s + x, 0) / a.length : 0);
   const fmt1 = (x) => (Math.round(x * 10) / 10).toFixed(1).replace(".", ",").replace(",0", "");
-  const flamesWord = (x) => fmt1(x) + (x === 1 ? " vlam" : " vlammen");
+  const flamesWord = (x) => { const t = fmt1(x); return t + (t === "1" ? " vlam" : " vlammen"); };
   const joinNames = (a) => (a.length <= 1 ? a.join("") : a.slice(0, -1).join(", ") + " en " + a[a.length - 1]);
 
   function prompts() {
@@ -221,13 +221,14 @@
 
   // ---------- UI ----------
   const CSS = `
-.vh{position:relative;width:100%;height:100%;min-height:480px;overflow:hidden;color:var(--glow,#ffe7b8);
+.vh{position:relative;width:100%;height:100%;min-height:480px;overflow:hidden;overflow:clip;color:var(--glow,#ffe7b8);
   font-family:system-ui,-apple-system,"Segoe UI",sans-serif;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;
   background:radial-gradient(140% 70% at 50% 108%,rgba(255,106,26,.34),rgba(232,64,28,.10) 42%,rgba(0,0,0,0) 70%),
     radial-gradient(90% 50% at 50% 0%,rgba(138,90,54,.10),rgba(0,0,0,0) 70%),
     linear-gradient(180deg,#0d0806,var(--soot,#0b0705) 55%,#170c06)}
 .vh *{box-sizing:border-box}
-.vh::before{content:"";position:absolute;inset:-10%;pointer-events:none;z-index:0;
+.vh,.vh *{font-variant-ligatures:none} /* geen "IJ"-ligatuur in Unbounded die als "U" leest */
+.vh::before{content:"";position:absolute;inset:0;pointer-events:none;z-index:0;
   background:radial-gradient(60% 45% at 50% 100%,rgba(255,150,60,.22),rgba(255,106,26,0) 70%);animation:vh-breathe 5.5s ease-in-out infinite}
 .vh::after{content:"";position:absolute;inset:0;pointer-events:none;z-index:5;background:radial-gradient(ellipse at 50% 55%,rgba(0,0,0,0) 50%,rgba(0,0,0,.6))}
 @keyframes vh-breathe{0%,100%{opacity:.75;transform:scale(1)}30%{opacity:1;transform:scale(1.03)}55%{opacity:.82}80%{opacity:.95;transform:scale(1.015)}}
@@ -237,7 +238,7 @@
   background:radial-gradient(80% 70% at 50% 85%,#ff9a3a,#e8401c 35%,#5a1606 70%,#1a0904);
   box-shadow:0 0 0 9px #0f0a08,0 0 0 10px rgba(255,194,71,.10),0 -10px 90px 20px rgba(255,106,26,.30),inset 0 8px 24px rgba(0,0,0,.6)}
 .vh-stove.lit{background:radial-gradient(80% 60% at 50% 100%,#3a1206,#120604 70%)}
-.vh-fire{position:absolute;left:-10%;right:-10%;bottom:0;width:120%;height:118%;display:block}
+.vh-fire{position:absolute;left:-15%;bottom:-4%;width:130%;height:190%;display:block}
 .vh-grate{position:absolute;left:0;right:0;bottom:0;height:24%;
   background:repeating-linear-gradient(90deg,rgba(0,0,0,0) 0 14px,#120a07 14px 19px),linear-gradient(180deg,#1d120c 0 5px,rgba(0,0,0,0) 5px);
   border-top:2px solid #26180f;opacity:.92}
@@ -270,7 +271,7 @@
   box-shadow:0 0 0 1px rgba(255,231,184,.35) inset,0 10px 30px rgba(232,64,28,.45),0 0 60px rgba(255,106,26,.25);transition:transform .12s,filter .25s,opacity .25s}
 .vh-btn:active{transform:scale(.97)}
 .vh-btn[disabled]{filter:grayscale(.5) brightness(.62);cursor:default}
-.vh-btn .fill{position:absolute;left:0;top:0;bottom:0;width:calc(var(--p,1) * 100%);background:rgba(255,243,208,.28);pointer-events:none}
+.vh-btn .fill{position:absolute;left:0;top:0;bottom:0;width:calc(var(--p,1) * 100%);background:rgba(255,243,208,.28);pointer-events:none;transition:width .2s linear}
 .vh-btn span{position:relative}
 .vh-howto .vh-btn{margin-top:24px}
 .vh-ghost{appearance:none;cursor:pointer;min-height:44px;padding:0 18px;border-radius:99px;font:700 14px/1 system-ui,sans-serif;color:var(--glow,#ffe7b8);
@@ -285,9 +286,10 @@
 .vh-fl{--s:84px;--f:0;position:relative;display:inline-block;width:var(--s);height:var(--s);flex:none}
 .vh-fl svg{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
 .vh-fl .b path{fill:#24170f;stroke:rgba(255,194,71,.28);stroke-width:1.2}
-.vh-fl .l{clip-path:inset(calc((1 - var(--f)) * 100%) 0 0 0);transition:clip-path .45s cubic-bezier(.2,.8,.2,1);
-  filter:drop-shadow(0 0 8px rgba(255,140,40,.9)) drop-shadow(0 0 22px rgba(255,106,26,.55));transform-origin:50% 92%}
-.vh-fl.on .l{animation:vh-lick 1.6s ease-in-out infinite}
+.vh-fl .lw{position:absolute;inset:0;transform-origin:50% 92%;filter:drop-shadow(0 0 7px rgba(255,140,40,.85)) drop-shadow(0 0 20px rgba(255,106,26,.5))}
+.vh-fl .l{clip-path:inset(calc((1 - var(--f)) * 100%) 0 0 0);transition:clip-path .45s cubic-bezier(.2,.8,.2,1)}
+.vh-fl:not(.on) .lw{filter:none}
+.vh-fl.on .lw{animation:vh-lick 1.6s ease-in-out infinite}
 .vh-fl .core{fill:#fff3d0;opacity:.85}
 @keyframes vh-lick{0%,100%{transform:scale(1,1) skewX(0)}25%{transform:scale(.97,1.05) skewX(-2deg)}50%{transform:scale(1.02,.97) skewX(1deg)}75%{transform:scale(.98,1.04) skewX(2deg)}}
 /* Speelscherm */
@@ -340,6 +342,7 @@
 .vh-ck em{font-style:normal;color:var(--ash,#b8a99a);letter-spacing:.12em}
 .vh-q{position:relative;margin:12px 0 0;font:italic 500 clamp(21px,6.3vw,27px)/1.28 "Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
   color:#fff1d6;text-wrap:balance;text-shadow:0 1px 0 rgba(0,0,0,.5)}
+.vh-card.big .vh-q{font-size:clamp(23px,7.2vw,30px)}
 .vh-card.small .vh-q{font-size:clamp(16px,4.6vw,19px);margin-top:8px}
 .vh-op{position:relative;margin:14px 0 0;padding:10px 12px;border-radius:12px;background:rgba(90,169,255,.08);border:1px solid rgba(90,169,255,.28);
   font-size:13.5px;line-height:1.35;color:var(--glow,#ffe7b8)}
@@ -353,6 +356,7 @@
 .vh-card.small .vh-op,.vh-card.small .vh-tw{margin-top:8px}
 .vh-gloei{font:italic 14px/1.4 "Iowan Old Style",Palatino,Georgia,serif;color:rgba(255,231,184,.72);text-align:center;max-width:320px;margin:0 auto}
 .vh-gloei::before{content:"🔥 ";font-style:normal}
+.vh-foot .vh-gloei{margin-bottom:clamp(30px,7vh,56px)}
 /* Beoordelen */
 .vh-rate{display:flex;justify-content:center;align-items:flex-end;gap:clamp(6px,3vw,16px);margin-top:4px}
 .vh-rb{appearance:none;border:0;background:none;cursor:pointer;padding:6px 4px 2px;border-radius:20px;display:flex;flex-direction:column;align-items:center;gap:4px;
@@ -370,8 +374,10 @@
 .vh-mine{display:flex;justify-content:center;gap:6px;margin-top:12px}
 .vh-mine .vh-fl{--s:54px}
 /* Onthulling */
-.vh-rev{position:absolute;inset:0;z-index:7;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:20px 20px 120px;
-  background:radial-gradient(70% 55% at 50% 45%,rgba(40,16,6,.82),rgba(11,7,5,.94));animation:vh-in .35s ease-out both}
+.vh-rev{position:absolute;inset:0;z-index:7;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:20px 20px 150px;
+  background:radial-gradient(70% 50% at 50% 42%,rgba(60,22,6,.55),rgba(11,7,5,.35) 70%,rgba(11,7,5,0));animation:vh-in .35s ease-out both}
+.vh-play{transition:opacity .35s,filter .35s}
+.vh.revealing .vh-play{opacity:0;filter:blur(6px)}
 .vh-rev.out{animation:vh-out .45s ease-in both}
 @keyframes vh-in{from{opacity:0}to{opacity:1}}@keyframes vh-out{to{opacity:0}}
 .vh-rev .row{display:flex;gap:10px;align-items:flex-end;margin-top:20px}
@@ -392,10 +398,11 @@
 .vh-li .fs{display:flex;gap:2px}.vh-li .vh-fl{--s:24px}
 .vh-li .sc{font:900 15px/1 "Unbounded",system-ui,sans-serif;color:var(--flame,#ffc247);min-width:30px;text-align:right}
 .vh-li .cr{position:absolute;left:-6px;top:-10px;font-size:18px;transform:rotate(-18deg)}
+.vh-end{font-size:17px;margin-top:18px}
 .vh-wait{margin-top:18px;font-size:14px;color:var(--ash,#b8a99a)}
 @media (max-height:640px){.vh-q{font-size:clamp(18px,5.6vw,22px)}.vh-card{padding:15px 16px 14px}.vh-foot{padding-bottom:58px}.vh-stove{height:96px}
   .vh-rb .vh-fl{--s:64px}.vh-rb:nth-child(1) .vh-fl{--s:56px}.vh-rb:nth-child(3) .vh-fl{--s:74px}.vh-scr{padding-bottom:110px}}
-@media (prefers-reduced-motion:reduce){.vh::before,.vh-card,.vh-card::before,.vh-fl.on .l,.vh-dots i,.vh-stove::after,.vh-li,.vh-fuse .tr b::after{animation:none}}
+@media (prefers-reduced-motion:reduce){.vh::before,.vh-card,.vh-card::before,.vh-fl.on .lw,.vh-dots i,.vh-stove::after,.vh-li,.vh-fuse .tr b::after{animation:none}}
 `;
 
   function injectCss() {
@@ -444,7 +451,7 @@
     const root = h("div", "vh");
     el.appendChild(root);
     let dead = false, phase = "howto", raf = 0, key = "", seenLog = v ? v.history.length : 0, sel = 0;
-    let turnT0 = 0, rateT0 = 0, turnSeen = -1, rateSeen = -1;
+    let turnT0 = 0, rateT0 = 0, turnSeen = -1, rateSeen = -1, outTurn = -1;
     const revQ = [];
     let revEl = null, finished = false;
     const timers = new Set();
@@ -463,7 +470,7 @@
       const s = h("span", "vh-fl" + (f > 0 ? " on" : ""));
       s.style.setProperty("--f", String(Math.max(0, Math.min(1, f))));
       s.innerHTML = '<svg class="b" viewBox="0 0 48 48" aria-hidden="true"><path d="' + FP + '"/></svg>' +
-        '<svg class="l" viewBox="0 0 48 48" aria-hidden="true"><path fill="url(#' + gid + ')" d="' + FP + '"/><path class="core" d="' + CORE + '"/></svg>';
+        '<span class="lw"><svg class="l" viewBox="0 0 48 48" aria-hidden="true"><path fill="url(#' + gid + ')" d="' + FP + '"/><path class="core" d="' + CORE + '"/></svg></span>';
       return s;
     }
     const setFlame = (s, f) => { s.style.setProperty("--f", String(Math.max(0, Math.min(1, f)))); s.classList.toggle("on", f > 0); };
@@ -481,10 +488,12 @@
     stove.append(fcv, h("div", "vh-grate"));
     root.appendChild(stove);
     let fire = null;
-    try { if (ctx.fire && ctx.fire.flame) { fire = ctx.fire.flame(fcv, { intensity: 0.42, embers: true, blueTips: true, logs: true }); stove.classList.add("lit"); } }
+    try { if (ctx.fire && ctx.fire.flame) { fire = ctx.fire.flame(fcv, { intensity: 0.55, embers: true, blueTips: true, logs: true }); stove.classList.add("lit"); } }
     catch (e) { fire = null; }
     const fireTo = (x) => { if (fire) try { fire.setIntensity(x); } catch (e) { /* stil */ } };
     const fireBurst = () => { if (fire) try { fire.burst(); } catch (e) { /* stil */ } };
+    // Hoe warmer de verhalen tot nu toe, hoe hoger het vuur (0,42 → 0,92 bij louter drie vlammen).
+    const warmth = (n) => { if (!v) return 0.5; const hs = v.history.slice(0, n == null ? v.history.length : n); return 0.42 + 0.5 * hs.reduce((a, e) => a + e.avg, 0) / (3 * Math.max(1, v.turns)); };
 
     // --- Trage gloeiende sintels over het hele scherm ---
     const cv = h("canvas", "vh-cv");
@@ -493,22 +502,48 @@
     const drng = M.rng(seed ^ 0xe4b3);
     const motes = Array.from({ length: reduced ? 6 : 22 }, () => ({ x: drng(), y: drng(), r: 0.7 + drng() * 1.7, sp: 0.012 + drng() * 0.03, ph: drng() * 6.28, hue: drng() }));
     let W = 0, H = 0, dpr = 1, last = 0;
+    const sparks = []; // vonkjes bij stemmen en onthullen (px, px/s, s)
     function fit() {
+      if (dead) return;
       const r = root.getBoundingClientRect();
       dpr = Math.min(2, window.devicePixelRatio || 1);
       W = Math.max(1, r.width); H = Math.max(1, r.height);
       cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
+      if (reduced) frame(now()); // canvas is net gewist: stilstaand beeld opnieuw tekenen
+    }
+    // Vonkenfontein vanuit een element (alleen met beweging aan).
+    function spark(node, n, up) {
+      if (reduced || !node || !node.getBoundingClientRect || sparks.length > 220) return;
+      const rr = root.getBoundingClientRect(), b = node.getBoundingClientRect();
+      if (!b.width) return;
+      const x0 = b.left - rr.left + b.width / 2, y0 = b.top - rr.top + b.height * (up ? 0.25 : 0.5);
+      for (let i = 0; i < n; i++) {
+        const a = -Math.PI / 2 + (Math.random() - 0.5) * (up ? 1.3 : 2.6), sp = 90 + Math.random() * 260;
+        sparks.push({ x: x0 + (Math.random() - 0.5) * b.width * 0.5, y: y0, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
+          life: 0, max: 0.55 + Math.random() * 0.75, r: 1 + Math.random() * 1.8, hot: Math.random() });
+      }
     }
     function frame(ts) {
       if (dead) return;
       if (!reduced) raf = requestAnimationFrame(frame);
       if (!g) return;
-      const dt = Math.min(0.05, last ? (ts - last) / 1000 : 0.016); last = ts;
+      const dt = Math.min(0.05, last ? Math.max(0, ts - last) / 1000 : 0.016); last = ts;
       g.setTransform(dpr, 0, 0, dpr, 0, 0);
       g.clearRect(0, 0, W, H);
       g.globalCompositeOperation = "lighter";
+      for (let i = sparks.length - 1; i >= 0; i--) {
+        const p = sparks[i];
+        p.life += dt;
+        if (p.life >= p.max) { sparks.splice(i, 1); continue; }
+        const k = Math.pow(0.12, dt); // luchtweerstand, per seconde
+        p.vx *= k; p.vy = p.vy * k - 40 * dt; // warme lucht trekt ze omhoog
+        p.x += p.vx * dt; p.y += p.vy * dt;
+        const a = 1 - p.life / p.max;
+        g.fillStyle = p.hot < 0.3 ? "rgba(255,243,208," + a.toFixed(3) + ")" : p.hot < 0.75 ? "rgba(255,194,71," + a.toFixed(3) + ")" : "rgba(255,106,26," + a.toFixed(3) + ")";
+        g.beginPath(); g.arc(p.x, p.y, p.r * (0.5 + a * 0.6), 0, 6.283); g.fill();
+      }
       motes.forEach((m) => {
-        m.y -= m.sp * dt; m.x += Math.sin(ts / 3100 + m.ph) * 0.00022;
+        m.y -= m.sp * dt; m.x += Math.sin(ts / 3100 + m.ph) * 0.013 * dt;
         if (m.y < -0.03) { m.y = 1.03; m.x = 0.2 + drng() * 0.6; }
         const life = Math.max(0, Math.min(1, m.y * 1.3)); // doven langzaam uit naar boven
         const tw = 0.6 + 0.4 * Math.sin(ts / 420 + m.ph * 3);
@@ -594,7 +629,7 @@
     }
 
     function card(small) {
-      const k = h("div", "vh-card" + (small ? " small" : ""));
+      const k = h("div", "vh-card" + (small ? " small" : " big"));
       const ck = h("div", "vh-ck");
       ck.append(document.createTextNode("🔥 Vuurpraat"), h("em", null, "Kaart " + (v.turn + 1)));
       k.appendChild(ck);
@@ -629,7 +664,7 @@
       if (!v || phase !== "play") return;
       if (v.stage === "tell" && turnSeen !== v.turn) { turnSeen = v.turn; turnT0 = now(); }
       if (v.stage === "rate" && rateSeen !== v.turn) { rateSeen = v.turn; rateT0 = now(); sel = 0; }
-      const k = [v.turn, v.stage, v.role, v.prompt, v.myVote === null ? 0 : 1, v.done ? 1 : 0].join("|");
+      const k = [v.turn, v.stage, v.role, v.prompt, v.swapsLeft, v.myVote === null ? 0 : 1, v.done ? 1 : 0].join("|");
       if (k !== key) {
         key = k;
         build();
@@ -638,6 +673,8 @@
       tickUI();
     }
 
+    // Komt er binnen 4 s geen nieuwe toestand (actie onderweg kwijt), dan mag je opnieuw tikken.
+    const unstick = (btn, fn) => { const k0 = key; later(() => { if (key === k0 && btn.isConnected) { btn.disabled = false; if (fn) fn(); } }, 4000); };
     function build() {
       main.textContent = ""; foot.textContent = "";
       klaarBtn = null; skipBtn = null; raterEls = {};
@@ -645,28 +682,31 @@
       const tName = nameOf(v.teller);
       const head = h("div", "vh-head");
       if (v.stage === "tell") {
-        fireTo(0.42 + 0.05 * v.turn);
+        fireTo(warmth());
         if (v.role === "teller") {
-          head.appendChild(h("span", "vh-pill", "🎙️ Jij vertelt"));
+          head.appendChild(h("span", "vh-pill", "🎙️ Jouw beurt"));
           head.appendChild(h("div", "vh-big", "Vertel maar…"));
           main.append(head, card(false));
           if (v.swapsLeft > 0) {
             const sw = h("button", "vh-ghost", "🔄 Andere kaart · nog " + v.swapsLeft);
             sw.type = "button";
-            on(sw, "click", () => { sw.disabled = true; beep(380, 0.06, "sine", 0.06); ctx.send({ t: "swap" }); });
+            on(sw, "click", () => { if (sw.disabled) return; sw.disabled = true; beep(380, 0.06, "sine", 0.06); buzz(10); ctx.send({ t: "swap" }); unstick(sw); });
             foot.appendChild(sw);
           }
-          klaarBtn = h("button", "vh-btn");
-          klaarBtn.type = "button";
-          klaarBtn.append(h("i", "fill"), h("span", null, "Klaar met vertellen"));
-          on(klaarBtn, "click", () => {
-            if (klaarBtn.disabled) return;
-            klaarBtn.disabled = true;
-            klaarBtn.dataset.sent = "1";
+          const kb = klaarBtn = h("button", "vh-btn");
+          kb.type = "button";
+          kb.disabled = true;
+          kb.append(h("i", "fill"), h("span", null, "Klaar met vertellen"));
+          on(kb, "click", () => {
+            if (kb.disabled || kb.dataset.sent) return;
+            kb.disabled = true;
+            kb.dataset.sent = "1";
             beep(660, 0.12, "triangle", 0.08); buzz(25);
+            spark(kb, 18, true);
             ctx.send({ t: "klaar" });
+            unstick(kb, () => { delete kb.dataset.sent; });
           });
-          foot.appendChild(klaarBtn);
+          foot.appendChild(kb);
         } else {
           const b = h("div", "vh-big");
           b.append(avatar(v.teller), document.createTextNode(tName + " vertelt"));
@@ -680,7 +720,7 @@
         return;
       }
       // stage "rate"
-      fireTo(0.5);
+      fireTo(warmth() + 0.04);
       if (v.role === "luisteraar" && v.myVote === null) {
         head.appendChild(h("div", "vh-kicker", "Jouw oordeel · geheim"));
         const b = h("div", "vh-big");
@@ -699,26 +739,31 @@
           row.appendChild(bt);
           return { bt, fl };
         });
-        const paint = () => btns.forEach((x, i) => { setFlame(x.fl, i < sel ? 1 : 0); x.bt.classList.toggle("on", i < sel); });
+        const paint = () => btns.forEach((x, i) => { setFlame(x.fl, i < sel ? 1 : 0); x.bt.classList.toggle("on", i < sel); x.bt.setAttribute("aria-pressed", String(i + 1 === sel)); });
         const give = h("button", "vh-btn");
         give.type = "button";
         const giveT = h("span", null, "Kies je vlammen");
         give.append(h("i", "fill"), giveT);
         give.disabled = !sel;
+        let sent = false;
         const setSel = (n) => {
+          if (sent) return; // al verstuurd: niet stiekem nog een stem klaarzetten
           sel = n; paint();
           word.textContent = RATE_WORD[n];
           giveT.textContent = "Geef " + n + (n === 1 ? " vlam" : " vlammen");
           give.disabled = false;
           beep(420 + n * 120, 0.07, "sine", 0.07); buzz(12);
+          spark(btns[n - 1].fl, 4 + n * 3, true);
         };
-        btns.forEach((x, i) => on(x.bt, "click", () => setSel(i + 1)));
+        btns.forEach((x, i) => { x.bt.setAttribute("aria-pressed", "false"); on(x.bt, "click", () => setSel(i + 1)); });
         on(give, "click", () => {
-          if (!sel || give.disabled) return;
-          give.disabled = true;
+          if (!sel || give.disabled || sent) return;
+          give.disabled = true; sent = true;
           const n = sel;
           beep(520 + n * 140, 0.16, "triangle", 0.09); buzz([20, 40, 20]);
+          btns.slice(0, n).forEach((x) => spark(x.fl, 8, true));
           ctx.send({ t: "rate", n });
+          unstick(give, () => { sent = false; });
         });
         if (sel) { paint(); giveT.textContent = "Geef " + sel + (sel === 1 ? " vlam" : " vlammen"); }
         main.append(row, word);
@@ -747,7 +792,8 @@
         skipBtn = h("button", "vh-ghost", "Niet langer wachten");
         skipBtn.type = "button";
         skipBtn.style.display = "none";
-        on(skipBtn, "click", () => { skipBtn.disabled = true; ctx.send({ t: "next" }); });
+        const sb = skipBtn;
+        on(sb, "click", () => { if (sb.disabled) return; sb.disabled = true; ctx.send({ t: "next" }); unstick(sb); });
         foot.appendChild(skipBtn);
       }
     }
@@ -757,23 +803,24 @@
       if (!v || phase !== "play" || v.done) { fuse.classList.remove("on"); return; }
       const t = now();
       const telling = v.stage === "tell";
+      // Zolang de uitslag van het vorige verhaal nog op het scherm staat, begint de nieuwe beurt niet.
+      if (telling && revEl) turnT0 = t;
       if (c.limit && telling) {
         const left = Math.max(0, c.limit * 1000 - (t - turnT0));
         fuse.classList.add("on");
         fuse.classList.toggle("out", left <= 0);
         fuseB.style.setProperty("--t", String(left / (c.limit * 1000)));
         fuseT.textContent = left > 0 ? Math.ceil(left / 1000) + "s" : "Tijd!";
-        if (klaarBtn && left <= 0 && !klaarBtn.dataset.out) {
-          klaarBtn.dataset.out = "1";
-          klaarBtn.lastChild.textContent = "Rond af · Klaar";
-          if (v.role === "teller") beep(300, 0.2, "sine", 0.06);
+        if (klaarBtn && left <= 0 && !klaarBtn.dataset.out) { klaarBtn.dataset.out = "1"; klaarBtn.lastChild.textContent = "Rond af · Klaar"; }
+        if (left <= 0 && outTurn !== v.turn) {
+          outTurn = v.turn;
+          if (v.role === "teller") { beep(300, 0.2, "sine", 0.06); buzz([30, 60, 30]); }
         }
       } else fuse.classList.remove("on");
       if (klaarBtn && !klaarBtn.dataset.sent) {
         const p = Math.min(1, (t - turnT0) / WARMUP);
         klaarBtn.style.setProperty("--p", String(p));
-        if (p < 1) klaarBtn.disabled = true;
-        else if (!klaarBtn.dataset.ready) { klaarBtn.dataset.ready = "1"; klaarBtn.disabled = false; }
+        klaarBtn.disabled = p < 1;
       }
       if (skipBtn) {
         const missing = v.raters.filter((p) => !v.voted.includes(p));
@@ -787,14 +834,16 @@
     // --- Onthulling na elk verhaal ---
     function queueReveals() {
       if (!v) return;
-      while (seenLog < v.history.length) revQ.push(v.history[seenLog++]);
+      while (seenLog < v.history.length) { revQ.push({ e: v.history[seenLog], i: seenLog }); seenLog++; }
       if (!revEl) nextReveal();
     }
     function nextReveal() {
-      const e = revQ.shift();
-      if (!e) { revEl = null; if (v && v.done) showDone(); return; }
+      const q = revQ.shift();
+      if (!q) { revEl = null; root.classList.remove("revealing"); if (v && v.done) showDone(); else if (v) fireTo(warmth()); return; }
+      const e = q.e;
       const r = h("div", "vh-rev");
-      r.appendChild(h("div", "vh-kicker", e.gloei ? "Gloei oordeelt zelf" : "Verhaal " + (v.history.indexOf(e) + 1) + " · " + (e.n === 1 ? "1 stem" : e.n + " stemmen")));
+      r.setAttribute("role", "status");
+      r.appendChild(h("div", "vh-kicker", e.gloei ? "Gloei oordeelt zelf" : "Verhaal " + (q.i + 1) + " · " + (e.n === 1 ? "1 stem" : e.n + " stemmen")));
       const b = h("div", "vh-big");
       b.append(avatar(e.teller), document.createTextNode(nameOf(e.teller)));
       r.appendChild(b);
@@ -802,25 +851,32 @@
       const fls = [0, 1, 2].map(() => { const f = flame(0); row.appendChild(f); return f; });
       r.appendChild(row);
       const avg = h("div", "avg", fmt1(e.avg));
-      avg.appendChild(h("small", null, e.avg >= 2.5 ? RATE_WORD[3] : e.avg >= 1.75 ? RATE_WORD[2] : RATE_WORD[1]));
+      avg.appendChild(h("small", null, (e.avg >= 2.5 ? RATE_WORD[3] : e.avg >= 1.75 ? RATE_WORD[2] : RATE_WORD[1]) +
+        (e.flames.length > 1 ? " · " + e.flames.join(" + ") : "")));
       r.appendChild(avg);
       r.appendChild(h("p", "vh-gloei", GLOEI_REV[Math.min(2, Math.max(0, Math.round(e.avg) - 1))]));
       root.appendChild(r);
+      root.classList.add("revealing");
       revEl = r;
       const step = reduced ? 0 : 420;
       fls.forEach((f, i) => later(() => {
         const fr = Math.max(0, Math.min(1, e.avg - i));
         setFlame(f, fr);
-        if (fr > 0) { beep(440 + i * 150, 0.14, "triangle", 0.07); buzz(15); }
+        if (fr > 0) { beep(440 + i * 150, 0.14, "triangle", 0.07); buzz(15); spark(f, Math.round(6 + fr * 12), true); }
       }, 300 + i * step));
-      later(() => { avg.classList.add("on"); fireTo(Math.min(0.95, 0.35 + e.avg * 0.2)); if (e.avg >= 2.3) fireBurst(); }, 300 + 3 * step);
+      later(() => {
+        avg.classList.add("on");
+        fireTo(Math.min(0.98, warmth(q.i + 1) + 0.1));
+        if (e.avg >= 2.3) { fireBurst(); spark(avg, 30); }
+        if (e.avg >= 3) { try { sfx.confetti && sfx.confetti(); } catch (x) { /* stil */ } buzz([30, 50, 30, 50, 60]); }
+      }, 300 + 3 * step);
       let gone = false;
       const close = () => {
         if (gone) return; gone = true;
         r.classList.add("out");
         later(() => { r.remove(); nextReveal(); }, reduced ? 0 : 420);
       };
-      later(close, reduced ? 1800 : 3300);
+      later(close, reduced ? 2400 : 4300); // tikken = sneller verder
       on(r, "click", () => { if (avg.classList.contains("on")) close(); });
     }
 
@@ -851,7 +907,7 @@
       });
       scr.appendChild(list);
       const all = log.length ? mean(log.map((e) => e.avg)) : 0;
-      scr.appendChild(h("p", "vh-text", all >= 2.5 ? "Gloei: \"Ik ben er stil van. En ik ben nooit stil.\"" : all >= 1.8 ? "Gloei: \"Mooi. Ik bewaar ze in mijn kooltjes.\"" : "Gloei: \"Gezellig. Echt. Ik gaapte alleen van de rook.\""));
+      scr.appendChild(h("p", "vh-gloei vh-end", all >= 2.5 ? "Gloei: \"Ik ben er stil van. En ik ben nooit stil.\"" : all >= 1.8 ? "Gloei: \"Mooi. Ik bewaar ze in mijn kooltjes.\"" : "Gloei: \"Gezellig. Echt. Ik gaapte alleen van de rook.\""));
       const w = h("div", "vh-wait", "Klaar! Wachten op de rest…");
       scr.appendChild(w);
       root.appendChild(scr);
@@ -874,11 +930,14 @@
       phase = "count";
       beep(1, 0.001, "sine", 0.0001); // audio ontgrendelen binnen het gebaar
       how.remove();
-      ctx.countdown(root, { go: "VERTEL!" }).then(() => { if (!dead) enterPlay(); });
+      const cd = ctx.countdown || ((el, o) => M.countdown(el, Object.assign({ sfx }, o)));
+      cd(root, { go: "VERTEL!" }).then(() => { if (!dead) enterPlay(); });
     });
 
     fit();
     on(window, "resize", fit);
+    const ro = typeof ResizeObserver === "function" ? new ResizeObserver(() => fit()) : null;
+    if (ro) ro.observe(root);
     raf = requestAnimationFrame(frame);
 
     // Terugkomen na herladen: al bezig of klaar → meteen naar het spel.
@@ -899,6 +958,8 @@
         dead = true;
         cancelAnimationFrame(raf);
         clearInterval(tickId);
+        if (ro) ro.disconnect();
+        sparks.length = 0;
         timers.forEach(clearTimeout); timers.clear();
         offs.forEach((f) => f()); offs.length = 0;
         if (fire) try { fire.destroy(); } catch (e) { /* stil */ }

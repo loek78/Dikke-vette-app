@@ -56,7 +56,7 @@ input { font: inherit; }
 
 /* ---------- Home ---------- */
 .hero { text-align: center; padding: 28px 0 18px; }
-.logo { font-size: 64px; filter: drop-shadow(0 0 24px rgba(255, 138, 0, .8)); animation: wobble 3s ease-in-out infinite; }
+.logo { display: inline-block; vertical-align: top; font-size: 64px; filter: drop-shadow(0 0 24px rgba(255, 138, 0, .8)); animation: wobble 3s ease-in-out infinite; }
 @keyframes wobble { 0%, 100% { transform: rotate(-6deg) scale(1); } 50% { transform: rotate(6deg) scale(1.08); } }
 .hero h1 {
   margin: 6px 0 4px;

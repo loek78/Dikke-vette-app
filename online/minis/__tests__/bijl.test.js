@@ -111,14 +111,14 @@ test("score: logs geheel in [-1,4] (binnen [-2,4]) voor veel willekeurige result
 test("score: meer hout = meer blokken op het vuur; mvp en namen kloppen", () => {
   const players = PLAYERS.slice(0, 2);
   const weak = def.score({ p0: { logs: 2, perfect: 0, misses: 9 }, p1: { logs: 1, perfect: 0, misses: 8 } }, { difficulty: 2, players });
-  const strong = def.score({ p0: { logs: 18, perfect: 9, misses: 1, combo: 12 }, p1: { logs: 15, perfect: 5, misses: 2, combo: 6 } }, { difficulty: 2, players });
+  const strong = def.score({ p0: { logs: 20, perfect: 12, misses: 1, combo: 12 }, p1: { logs: 17, perfect: 8, misses: 2, combo: 6 } }, { difficulty: 2, players });
   assert.ok(strong.logs > weak.logs);
   assert.strictEqual(strong.logs, 4);
   assert.strictEqual(weak.logs, -1);
   assert.strictEqual(strong.mvp, "p0");
-  assert.ok(strong.lines.some((l) => l.includes("Loek") && l.includes("18")));
+  assert.ok(strong.lines.some((l) => l.includes("Loek") && l.includes("20")));
   assert.ok(strong.lines.some((l) => l.includes("12 keer op rij")));
-  assert.ok(strong.lines.some((l) => l.includes("Samen 33 blokken")));
+  assert.ok(strong.lines.some((l) => l.includes("Samen 37 blokken")));
   // Hetzelfde resultaat telt zwaarder op een hogere moeilijkheid.
   const r = { p0: { logs: 10, perfect: 3, misses: 3 } };
   const one = [PLAYERS[0]];
@@ -137,6 +137,81 @@ test("score: ontbrekende speler wordt genoemd en drukt de score", () => {
   assert.ok(none.logs >= -2 && none.logs <= 4 && none.mvp === null);
   const empty = def.score(null, {});
   assert.ok(Number.isInteger(empty.logs));
+});
+
+test("eerlijk vak: nooit een kleiner tijdvenster dan winMs/perfMs, perfect-kern binnen het vak, vak past op de meter", () => {
+  for (const d of [1, 2, 3]) {
+    const c = def.CFG[d];
+    for (let s = 0; s <= 40; s += 1) {
+      for (let at = c.lo; at <= c.hi + 1e-9; at += 0.01) {
+        const z = def.zone(s, d, at), v = def.speedAt(z.c, d);
+        assert.ok(z.c - z.w >= -1e-9 && z.c + z.w <= 1 + 1e-9, "past");
+        assert.ok(z.pk > 0 && z.pk <= z.w + 1e-12, "kern binnen vak");
+        // het vak duurt minstens ±winMs voor de naald (op de plek waar hij het snelst gaat binnen het vak niet ver af)
+        assert.ok(z.w / def.speedAt(at, d) >= c.winMs - 1e-6, "venster d" + d + " s" + s + " at" + at.toFixed(2));
+        assert.ok(z.pk >= Math.min(z.w, v * c.perfMs) - 1e-9, "perfect-venster");
+      }
+    }
+  }
+});
+
+test("speedAt klopt met de echte naald, earlyLate zegt eerlijk te vroeg/te laat", () => {
+  for (const d of [1, 2, 3]) {
+    const per = def.CFG[d].period;
+    for (let t = 37; t < per; t += 53) {
+      const p = def.needle(t, d), num = Math.abs(def.needle(t + 0.5, d) - def.needle(t - 0.5, d));
+      if (p < 0.03 || p > 0.97) continue; // omkeerpunt
+      assert.ok(Math.abs(def.speedAt(p, d) - num) < num * 0.03 + 1e-6, "d" + d + " t" + t);
+    }
+  }
+  // d1: naald gaat in de eerste halve periode omhoog. Staat hij onder het vak: te vroeg; erboven: te laat.
+  assert.strictEqual(def.earlyLate(def.CFG[1].period * 0.1, 1, 0.5), "vroeg"); // p = 0.2
+  assert.strictEqual(def.earlyLate(def.CFG[1].period * 0.4, 1, 0.5), "laat"); // p = 0.8
+  // terugweg: omgekeerd
+  assert.strictEqual(def.earlyLate(def.CFG[1].period * 0.6, 1, 0.5), "vroeg"); // p = 0.8, dalend
+  assert.ok(def.INPUT_LAG >= 0 && def.INPUT_LAG <= 60);
+});
+
+test("ijking: scherp = +4, geconcentreerd = +3, rammen levert niks op (alle moeilijkheden)", () => {
+  const team = (d, sd, seed) => def.score({ p0: def.simulate(DVMini.rng(seed), d, sd), p1: def.simulate(DVMini.rng(seed + 500), d, sd) },
+    { difficulty: d, players: PLAYERS.slice(0, 2) }).logs;
+  const avg = (d, sd) => { let t = 0; for (let s = 1; s <= 60; s++) t += team(d, sd, s); return t / 60; };
+  // wild rammen: tik zodra het mag
+  const mash = (d, seed) => {
+    const r = DVMini.rng(seed), blocks = def.plan(seed, d);
+    let t = 0, i = 0, cr = false, logs = 0, perfect = 0, misses = 0, st = 0, z = def.zone(0, d, blocks[0].c);
+    while ((t += 60 + r() * 80) < def.DURATION) {
+      const res = def.judge(def.needle(t, d), z.c, z.w, z.pk);
+      if (res === "miss") { misses++; st = 0; z = def.zone(0, d, z.c); t += 680; continue; }
+      st++; if (res === "perfect") perfect++;
+      const b = blocks[i % blocks.length];
+      if (b.knot && !cr) { cr = true; z = def.zone(st, d, 1 - b.c); } else { logs++; i++; cr = false; z = def.zone(st, d, blocks[i % blocks.length].c); }
+      t += 400;
+    }
+    return { logs, perfect, misses };
+  };
+  for (const d of [1, 2, 3]) {
+    assert.ok(avg(d, 22) >= 3.6, "scherp d" + d + " " + avg(d, 22));
+    const mid = avg(d, 35);
+    assert.ok(mid >= 2.5 && mid <= 3.6, "geconcentreerd d" + d + " " + mid);
+    const casual = avg(d, 55);
+    assert.ok(casual >= 0.5 && casual < mid, "gezellig d" + d + " " + casual);
+    let m = 0; for (let s = 1; s <= 30; s++) m += def.score({ p0: mash(d, s), p1: mash(d, s + 99) }, { difficulty: d, players: PLAYERS.slice(0, 2) }).logs;
+    assert.ok(m / 30 <= -0.5, "rammen d" + d + " " + m / 30);
+  }
+});
+
+test("2 tot 6 spelers: score blijft geldig, iedereen in perPlayer, regels kort", () => {
+  const six = [...PLAYERS, { pid: "p4", name: "Iris" }, { pid: "p5", name: "Een heel erg lange naam die nergens op slaat" }];
+  for (let n = 2; n <= 6; n++) {
+    const players = six.slice(0, n), results = {};
+    players.forEach((p, i) => { results[p.pid] = i === 1 ? null : def.bot(DVMini.rng(i + n * 10), 2); });
+    const sc = def.score(results, { difficulty: 2, players });
+    assert.ok(Number.isInteger(sc.logs) && sc.logs >= -1 && sc.logs <= 4);
+    assert.strictEqual(Object.keys(sc.perPlayer).length, n);
+    assert.ok(sc.lines.every((l) => l.length <= 140), JSON.stringify(sc.lines));
+    assert.doesNotThrow(() => JSON.stringify(sc));
+  }
 });
 
 test("module lekt niets naar de globale scope en mount raakt de DOM pas bij aanroep", () => {

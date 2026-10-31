@@ -8,13 +8,16 @@
   const DURATION = 20000; // ms speeltijd
   // Per moeilijkheid: naaldperiode (heen+terug, ms), sinus-beweging, vakbreedte (halve breedte, 0..1) en krimp per treffer,
   // waar het vak mag staan, kans op een knoest en "par" (wat een goede houthakker haalt, voor de score).
+  // winMs/perfMs: ondergrens van het tijdvenster (± ms) waarin de naald door het vak/de kern gaat. Zonder die grens
+  // kroop het vak op 3 in het snelle midden naar ±12 ms (perfect ±5 ms): geluk in plaats van timing.
   const CFG = {
-    1: { name: "Handbijl", period: 1800, wave: false, base: 0.15, min: 0.06, shrink: 0.9, lo: 0.3, hi: 0.7, knot: 0, par: 15 },
-    2: { name: "Kloofbijl", period: 1300, wave: false, base: 0.12, min: 0.045, shrink: 0.89, lo: 0.16, hi: 0.84, knot: 0.2, par: 12 },
-    3: { name: "Grote bijl", period: 1050, wave: true, base: 0.1, min: 0.035, shrink: 0.88, lo: 0.1, hi: 0.9, knot: 0.35, par: 9 },
+    1: { name: "Handbijl", period: 1800, wave: false, base: 0.15, min: 0.06, shrink: 0.9, lo: 0.3, hi: 0.7, knot: 0, winMs: 50, perfMs: 20, par: 20 },
+    2: { name: "Kloofbijl", period: 1300, wave: false, base: 0.12, min: 0.045, shrink: 0.89, lo: 0.16, hi: 0.84, knot: 0.2, winMs: 36, perfMs: 15, par: 14.5 },
+    3: { name: "Grote bijl", period: 1050, wave: true, base: 0.1, min: 0.035, shrink: 0.88, lo: 0.1, hi: 0.9, knot: 0.35, winMs: 32, perfMs: 12, par: 10 },
   };
   const SWING = 110, HIT_BUSY = 400, MISS_BUSY = 680; // ms vanaf de tik
   const PERFECT_K = 0.36; // deel van het vak dat als perfect telt
+  const INPUT_LAG = 25; // ms: wat de speler zag lag een frame + aanraakvertraging achter op het moment van de tik
 
   const dl = (d) => Math.max(1, Math.min(3, Math.round(d) || 1));
   const cfg = (d) => CFG[dl(d)];
@@ -25,15 +28,32 @@
     if (c.wave) return 0.5 - 0.5 * Math.cos(ph * 2 * Math.PI);
     return ph < 0.5 ? ph * 2 : 2 - ph * 2;
   }
+  // Snelheid van de naald (meter per ms) op stand p.
+  function speedAt(p, d) {
+    const c = cfg(d), q = Math.max(0, Math.min(1, p));
+    return c.wave ? (2 * Math.PI / c.period) * Math.sqrt(q * (1 - q)) : 2 / c.period;
+  }
   const halfWidth = (streak, d) => { const c = cfg(d); return Math.max(c.min, c.base * Math.pow(c.shrink, Math.max(0, streak || 0))); };
+  // Het vak rond `center` na `streak` treffers: halve breedte w en perfect-kern pk, nooit smaller dan het tijdvenster.
+  function zone(streak, d, center) {
+    const c = cfg(d), v = speedAt(center, d);
+    const w = Math.max(halfWidth(streak, d), v * c.winMs);
+    const at = Math.max(w, Math.min(1 - w, center));
+    return { c: at, w, pk: Math.min(w, Math.max(0.016, w * PERFECT_K, v * c.perfMs)) };
+  }
   // Geseede blokkenreeks: waar het vak staat en of het blok knoestig is.
   function plan(seed, d, n = 80) {
     const c = cfg(d), r = M.rng((seed >>> 0) ^ 0xb17e);
     return Array.from({ length: n }, (_, i) => { const at = c.lo + r() * (c.hi - c.lo), k = r(); return { c: at, knot: i > 1 && k < c.knot }; });
   }
-  function judge(p, center, w) {
+  function judge(p, center, w, pk) {
     const a = Math.abs(p - center);
-    return a <= Math.max(0.016, w * PERFECT_K) ? "perfect" : a <= w ? "good" : "miss";
+    return a <= (pk != null ? pk : Math.max(0.016, w * PERFECT_K)) ? "perfect" : a <= w ? "good" : "miss";
+  }
+  // Mis: was de naald nog onderweg naar het vak (te vroeg) of er al voorbij (te laat)?
+  function earlyLate(t, d, center) {
+    const p = needle(t, d), dir = needle(t + 8, d) - needle(t - 8, d);
+    return (p - center) * dir < 0 ? "vroeg" : "laat";
   }
 
   // ---------- Scoren ----------
@@ -44,15 +64,16 @@
     if (logs === null || perfect === null || misses === null) return null;
     return { logs, perfect, misses, combo: num(r.combo) || 0 };
   }
-  // Houthakkerspunten: gekloofde blokken, perfect geeft een bonusje, missers kosten wat.
-  const points = (v) => Math.max(0, v.logs + 0.4 * v.perfect - 0.5 * v.misses);
+  // Houthakkerspunten: gekloofde blokken, perfect geeft een bonusje, missers kosten wat (wild rammen levert ~0 op).
+  // Par per moeilijkheid is geijkt met simulate(): ±25 ms timing = +4, ±35 ms = +3, ±45 ms = +2, ±60 ms = +1/+2.
+  const points = (v) => Math.max(0, v.logs + 0.4 * v.perfect - 0.35 * v.misses);
 
   function score(results, info) {
     results = results && typeof results === "object" ? results : {};
     info = info || {};
     const c = cfg(info.difficulty);
     const players = Array.isArray(info.players) && info.players.length ? info.players : Object.keys(results).map((pid) => ({ pid, name: pid }));
-    const nameOf = (p) => (p && p.name) || "Iemand";
+    const nameOf = (p) => { const n = String((p && p.name) || "Iemand"); return n.length > 18 ? n.slice(0, 17) + "…" : n; };
     const rows = players.map((p) => { const v = valid(results[p.pid]); return { p, v, pts: v ? points(v) : null }; });
     const played = rows.filter((x) => x.v);
     // Wie niet meedeed, telt als een paar twijgjes.
@@ -82,7 +103,7 @@
     const streak = played.slice().sort((a, b) => b.v.combo - a.v.combo)[0];
     if (streak && streak.v.combo >= 8) lines.push(nameOf(streak.p) + " hakte " + streak.v.combo + " keer op rij raak. Machine.");
     const clumsy = played.slice().sort((a, b) => b.v.misses - a.v.misses)[0];
-    if (played.length >= 2 && clumsy && clumsy.v.misses >= 6 && clumsy.p.pid !== mvp) lines.push(nameOf(clumsy.p) + " sloeg " + clumsy.v.misses + "× mis. De stronk heeft het zwaar.");
+    if (played.length >= 2 && clumsy && clumsy.v.misses >= [6, 8, 11][dl(info.difficulty) - 1] && clumsy.p.pid !== mvp) lines.push(nameOf(clumsy.p) + " sloeg " + clumsy.v.misses + "× mis. De stronk heeft het zwaar.");
     rows.filter((x) => !x.v).forEach((x) => lines.push(nameOf(x.p) + " bleef binnen bij de kachel. Verdacht."));
     const total = played.reduce((s, x) => s + x.v.logs, 0);
     if (played.length >= 2) lines.push("Samen " + total + " blokken op de stapel.");
@@ -93,25 +114,35 @@
     return { logs, lines, mvp, perPlayer };
   }
 
-  // Geloofwaardige bot: simuleert wachten op de naald, raak/mis (moeilijker naarmate het vak krimpt) en knoesten.
-  function bot(rng, difficulty) {
-    const d = dl(difficulty), c = CFG[d];
-    const blocks = plan(Math.floor(rng() * 4294967296), d);
-    const skill = Math.max(0.3, Math.min(0.97, 0.58 + rng() * 0.38 - (d - 1) * 0.05));
+  // Speelt een potje met exact de spelregels van mount(): een "mens" die de naald ziet aankomen en mikt op het midden
+  // van het vak, met een normaal verdeelde timingfout van sd ms. Gebruikt door de bot en om par te ijken.
+  function simulate(rng, difficulty, sd, seed) {
+    const d = dl(difficulty);
+    const blocks = plan(seed != null ? seed : Math.floor(rng() * 4294967296), d);
+    const gauss = () => Math.sqrt(-2 * Math.log(rng() || 1e-9)) * Math.cos(2 * Math.PI * rng());
     let t = 0, i = 0, cracked = false, logs = 0, perfect = 0, misses = 0, streak = 0, combo = 0;
-    for (;;) {
-      t += c.period * (0.2 + rng() * 0.32) * (1.6 - skill * 0.6);
-      if (t >= DURATION) break;
-      const w = halfWidth(streak, d);
-      if (rng() < Math.min(0.97, skill * (0.62 + w * 2.6))) {
-        streak++; combo = Math.max(combo, streak);
-        if (rng() < skill * 0.5) perfect++;
-        if (blocks[i % blocks.length].knot && !cracked) cracked = true;
-        else { logs++; i++; cracked = false; }
-        t += HIT_BUSY;
-      } else { misses++; streak = 0; t += MISS_BUSY; }
+    let z = zone(0, d, blocks[0].c);
+    for (let n = 0; n < 200; n++) {
+      // eerste keer dat de naald het midden van het vak kruist nadat je weer klaarstaat
+      let tt = t + 160 + rng() * 160, prev = needle(tt, d) - z.c;
+      for (let k = 0; k < 3000; k += 2) { const v = needle(tt + 2, d) - z.c; if (v === 0 || (v > 0) !== (prev > 0)) break; prev = v; tt += 2; }
+      const tap = Math.max(t, tt + gauss() * sd);
+      if (tap >= DURATION) break;
+      const res = judge(needle(tap, d), z.c, z.w, z.pk);
+      if (res === "miss") { misses++; streak = 0; z = zone(0, d, z.c); t = tap + MISS_BUSY; continue; }
+      streak++; combo = Math.max(combo, streak);
+      if (res === "perfect") perfect++;
+      const b = blocks[i % blocks.length];
+      if (b.knot && !cracked) { cracked = true; z = zone(streak, d, 1 - b.c); }
+      else { logs++; i++; cracked = false; z = zone(streak, d, blocks[i % blocks.length].c); }
+      t = tap + HIT_BUSY;
     }
     return { logs, perfect, misses, combo };
+  }
+  // Geloofwaardige bot: een mens met timingfout tussen ±28 ms (scherp) en ±75 ms (een biertje op).
+  function bot(rng, difficulty) {
+    rng = typeof rng === "function" ? rng : Math.random;
+    return simulate(rng, difficulty, 28 + rng() * 47);
   }
 
   // ---------- UI ----------
@@ -146,10 +177,11 @@
   display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:10px;transition:opacity .4s}
 .bj-cnt{justify-self:start;display:flex;align-items:center;gap:8px;font:900 24px/1 "Unbounded",system-ui,sans-serif;color:var(--flame,#ffc247);
   text-shadow:0 0 14px rgba(255,106,26,.55)}
-.bj-cnt i{width:24px;height:24px;border-radius:50%;flex:none;transition:transform .12s;
+.bj-cnt i{width:24px;height:24px;border-radius:50%;flex:none;
   background:radial-gradient(circle at 50% 50%,#f3c98f 0 18%,#c8894c 19% 32%,#e4ae70 33% 48%,#b8763e 49% 66%,#5a3519 67% 100%);
   box-shadow:0 0 0 1px #2a160a,0 0 12px rgba(255,140,50,.4)}
-.bj-cnt i.bump{transform:scale(1.35)}
+.bj-cnt i.bump{animation:bj-bump .3s cubic-bezier(.2,.9,.3,1.3)}
+@keyframes bj-bump{0%{transform:scale(1)}35%{transform:scale(1.4) rotate(-12deg)}100%{transform:scale(1)}}
 .bj-cnt small{font:700 11px/1 system-ui,sans-serif;letter-spacing:.14em;text-transform:uppercase;color:var(--ash,#b8a99a);text-shadow:none}
 .bj-bar{width:min(32vw,130px);height:6px;border-radius:9px;background:rgba(255,231,184,.1);overflow:hidden}
 .bj-bar i{display:block;height:100%;width:100%;border-radius:9px;transform-origin:left;
@@ -163,7 +195,8 @@
   font:900 32px/1 "Unbounded",system-ui,sans-serif;animation:bj-pop .75s cubic-bezier(.2,.9,.3,1.2) forwards}
 .bj-pop.p{color:#fff3d0;font-size:36px;text-shadow:0 0 22px rgba(255,194,71,.95),0 0 4px #ffc247,0 3px 0 #8a3a06}
 .bj-pop.g{color:var(--ember,#ff6a1a);font-size:28px;text-shadow:0 0 14px rgba(255,106,26,.6),0 2px 0 #4a1503}
-.bj-pop.m{color:#cfe3ff;font-size:26px;text-shadow:0 0 14px rgba(90,169,255,.6),0 2px 0 #10203a}
+.bj-pop.m{color:#cfe3ff;font-size:26px;text-shadow:0 0 14px rgba(90,169,255,.6),0 2px 0 #10203a;text-align:center}
+.bj-pop small{display:block;margin-top:6px;font:800 13px/1 system-ui,sans-serif;letter-spacing:.16em;text-transform:uppercase;color:#9fc7ff;text-shadow:0 1px 4px #000}
 .bj-pop.k{color:var(--flame,#ffc247);font-size:18px;font-family:system-ui,sans-serif;font-weight:800;letter-spacing:.08em}
 .bj-pop.c{color:var(--glow,#ffe7b8);font-size:15px;font-family:system-ui,sans-serif;font-weight:700;letter-spacing:.02em;
   background:rgba(23,16,11,.78);border:1px solid rgba(255,194,71,.35);padding:8px 13px;border-radius:14px;animation-duration:1.9s}
@@ -194,7 +227,9 @@
   padding:10px 16px;border-radius:99px;background:rgba(23,16,11,.7);border:1px solid rgba(255,231,184,.12)}
 .bj-wait i{width:10px;height:10px;border-radius:50%;background:var(--ember,#ff6a1a);box-shadow:0 0 12px var(--ember,#ff6a1a);animation:bj-breathe 1s ease-in-out infinite}
 @keyframes bj-breathe{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(.7);opacity:.6}}
-@media (prefers-reduced-motion:reduce){.bj-wait i,.bj-time.hot{animation:none}}
+@keyframes bj-fadepop{0%{opacity:0}15%{opacity:1}70%{opacity:1}100%{opacity:0}}
+@media (prefers-reduced-motion:reduce){.bj-wait i,.bj-time.hot,.bj-cnt i.bump,.bj .mini-countdown.pop{animation:none}
+  .bj-pop{animation-name:bj-fadepop}.bj-res{animation:none}}
 `;
 
   function injectCss() {
@@ -280,7 +315,7 @@
     const slotJit = Array.from({ length: 120 }, () => ({ r: 0.86 + drng() * 0.14, a: (drng() - 0.5) * 0.5, tone: drng() }));
 
     // --- Layout ---
-    let W = 0, H = 0, dpr = 1, L = null, bg = null, logImg = null, knotImg = null;
+    let W = 0, H = 0, dpr = 1, L = null, bg = null, logImg = null, knotImg = null, vig = null, lanGlow = null;
     function layout() {
       const r = root.getBoundingClientRect();
       W = Math.max(1, r.width); H = Math.max(1, r.height);
@@ -308,6 +343,16 @@
       bg = renderBg();
       logImg = renderLog(false);
       knotImg = renderLog(true);
+      // Grote verlopen één keer per layout (op halve resolutie, zacht genoeg) i.p.v. elk frame: scheelt veel op trage telefoons.
+      vig = document.createElement("canvas"); vig.width = Math.max(1, Math.round(W / 2)); vig.height = Math.max(1, Math.round(H / 2));
+      const vx = vig.getContext("2d"), vg = vx.createRadialGradient(W / 4, H / 4, Math.min(W, H) * 0.225, W / 4, H / 4, Math.max(W, H) * 0.375);
+      vg.addColorStop(0, "rgba(6,8,14,0)"); vg.addColorStop(1, "rgba(6,8,14,.65)");
+      vx.fillStyle = vg; vx.fillRect(0, 0, vig.width, vig.height);
+      lanGlow = document.createElement("canvas"); lanGlow.width = vig.width; lanGlow.height = vig.height;
+      const lx = lanGlow.getContext("2d"), lg = lx.createRadialGradient(L.lanX / 2, L.lanY / 2, 2, L.lanX / 2, (L.lanY + H * 0.08) / 2, Math.min(W, H) * 0.275);
+      lg.addColorStop(0, "rgba(255,150,60,.3)"); lg.addColorStop(0.4, "rgba(255,106,26,.1)"); lg.addColorStop(1, "rgba(255,106,26,0)");
+      lx.fillStyle = lg; lx.fillRect(0, (L.horizon - H * 0.2) / 2, lanGlow.width, lanGlow.height);
+      if (!looping && !dead) { looping = true; raf = requestAnimationFrame(frame); } // stilgezet na de uitslag: één keer opnieuw tekenen
     }
     if (typeof ResizeObserver === "function") { ro = new ResizeObserver(() => layout()); ro.observe(root); }
 
@@ -421,22 +466,26 @@
     }
 
     // --- Spelstatus ---
-    let t0 = 0, lastFrame = 0, now0 = 0;
+    let t0 = 0, lastFrame = 0, now0 = 0, hiddenAt = 0, resultAt = 0, looping = true, chk = 0;
     let idx = 0, cracked = false, streak = 0, best = 0, logs = 0, perfect = 0, misses = 0, swings = 0;
     let logGone = false, busyUntil = 0, swingAt = -1, swingRes = null, dropAt = -1e9, wobble = 0, shake = 0, flash = 0, gold = 0, lastSec = 99;
-    let zoneC = blocks[0].c, zoneW = halfWidth(0, d), visC = zoneC, visW = zoneW, glow = 0;
+    let zoneC = 0, zoneW = 0, zonePk = 0, glow = 0, lastTap = null;
+    const setZone = (center) => { const z = zone(streak, d, center); zoneC = z.c; zoneW = z.w; zonePk = z.pk; };
+    setZone(blocks[0].c);
+    let visC = zoneC, visW = zoneW, visPk = zonePk;
     const trail = [];
     const parts = [], pieces = [], stack = [];
 
     const needleNow = (t) => needle(t, d);
-    const playT = () => (phase === "play" ? performance.now() - t0 : 0);
+    const playT = () => (phase === "play" ? (hiddenAt || performance.now()) - t0 : 0);
 
-    function popup(text, cls, y) {
+    function popup(text, cls, y, sub) {
       const p = h("div", "bj-pop " + cls, text);
+      if (sub) p.appendChild(h("small", null, sub));
       p.style.top = Math.round(y != null ? y : L.logTop - 34) + "px";
       p.addEventListener("animationend", () => p.remove());
       root.appendChild(p);
-      if (cls !== "c") root.querySelectorAll(".bj-pop:not(.c)").forEach((x) => { if (x !== p && !x.classList.contains("k")) x.remove(); });
+      if (cls !== "c") root.querySelectorAll(".bj-pop:not(.c)").forEach((x) => { if (x !== p) x.remove(); });
     }
     function bumpCount() {
       cntNum.textContent = String(logs);
@@ -464,16 +513,16 @@
     }
 
     // Twee helften vliegen omhoog, draaien en landen daarna op de stapel.
+    // De stapel bewaart plek-nummers, geen pixels: na draaien/resizen staat alles weer goed.
     function split(img, perfectHit) {
       const { strike, lrx, lh } = L;
-      const slot = stack.length;
-      const target = slotPos(slot);
+      const slot = slotPos(stack.length) ? stack.length : null;
       [-1, 1].forEach((s) => {
         const p = perfectHit ? 1.25 : 1;
         pieces.push({ img, side: s, x: strike.x + s * lrx * 0.5, y: strike.y + lh * 0.5, vx: s * (150 + Math.random() * 90) * p, vy: -(330 + Math.random() * 120) * p,
-          rot: 0, vr: s * (5 + Math.random() * 4) * p, life: 0, sx: 0, sy: 0, target, gold: perfectHit ? 1 : 0 });
+          rot: 0, vr: s * (5 + Math.random() * 4) * p, life: 0, sx: 0, sy: 0, slot, gold: perfectHit ? 1 : 0 });
       });
-      if (target) stack.push({ x: target.x, y: target.y, pop: -1, j: slotJit[slot % slotJit.length], gold: perfectHit });
+      if (slot != null) stack.push({ slot, pop: -1, j: slotJit[slot % slotJit.length], gold: perfectHit });
     }
 
     // Stapelplek n: rijen van onder naar boven, oneven rijen half verschoven (zoals een echte houtmijt).
@@ -487,27 +536,33 @@
       return null;
     }
 
-    function swing() {
-      if (phase !== "play") return;
+    // evT = event.timeStamp (zelfde klok als performance.now). We beoordelen de naald zoals de speler hem zág:
+    // op het moment van aanraken, min een frame + aanraakvertraging. Niet op het moment dat de handler toevallig draait.
+    function swing(evT) {
+      if (phase !== "play" || hiddenAt) return;
       const t = playT();
-      if (t < busyUntil) return;
-      const p = needleNow(t);
-      const res = judge(p, zoneC, zoneW);
+      if (t < busyUntil || t >= DURATION) return;
+      const et = typeof evT === "number" && evT > 0 ? evT - t0 : t;
+      const tj = (et <= t && et > t - 150 ? et : t) - INPUT_LAG;
+      const p = needleNow(tj);
+      const res = judge(p, zoneC, zoneW, zonePk);
+      const side = res === "miss" ? earlyLate(tj, d, zoneC) : null;
       swings++;
       swingAt = t; swingRes = res;
+      lastTap = { p, res, at: performance.now() };
       busyUntil = t + (res === "miss" ? MISS_BUSY : HIT_BUSY);
-      beep(260, 0.05, "sine", 0.04); // zoef
-      later(() => impact(res), SWING);
+      beep(420, 0.035, "sine", 0.035); beep(240, 0.06, "sine", 0.04, 0.035); // zoef
+      later(() => impact(res, side), SWING);
     }
 
-    function impact(res) {
+    function impact(res, side) {
       const b = blocks[idx % blocks.length];
       if (res === "miss") {
         misses++; streak = 0;
-        zoneW = halfWidth(0, d);
+        setZone(zoneC);
         wobble = 1; shake = reduced ? 0 : 0.35;
         chips(5, 140, false);
-        popup("MIS", "m");
+        popup("MIS", "m", null, side === "vroeg" ? "te vroeg" : "te laat");
         beep(150, 0.12, "triangle", 0.09); beep(95, 0.16, "square", 0.04);
         buzz(40);
         return;
@@ -522,32 +577,37 @@
         popup("KRAK! nog één", "k", L.logTop - 30);
         beep(200, 0.08, "square", 0.07);
         buzz(18);
-        zoneW = halfWidth(streak, d);
-        zoneC = Math.max(zoneW, Math.min(1 - zoneW, 1 - b.c)); // vak springt naar de overkant
+        setZone(1 - b.c); // vak springt naar de overkant
         return;
       }
       logs++;
+      glow = 1;
       split(b.knot ? knotImg : logImg, perf);
       shake = reduced ? 0 : perf ? 1 : 0.65;
-      chips(perf ? 34 : 18, perf ? 360 : 260, perf);
+      chips(perf ? 34 : 18, perf ? 360 : 260, perf || streak >= 5); // vanaf ×5 sprankelt elke klap
       puff(L.cx, L.stumpTop + L.sry, perf ? 10 : 5);
-      if (perf) { flash = 1; gold = 1; popup("PERFECT!", "p"); beep(880 + Math.min(streak, 20) * 30, 0.1, "triangle", 0.1); beep(1320 + Math.min(streak, 20) * 40, 0.14, "sine", 0.06); buzz(28); }
+      if (perf) { flash = reduced ? 0.35 : 1; gold = 1; popup("PERFECT!", "p"); beep(880 + Math.min(streak, 20) * 30, 0.1, "triangle", 0.1); beep(1320 + Math.min(streak, 20) * 40, 0.14, "sine", 0.06); buzz(28); }
       else { popup("RAAK", "g"); beep(520 + Math.min(streak, 20) * 20, 0.07, "triangle", 0.08); buzz(16); }
       beep(110, 0.09, "square", 0.06); // de klap
       bumpCount();
       if (QUIPS[streak]) later(() => popup(QUIPS[streak], "c", L.ground + H * 0.075), 160);
       if (logs >= 3) hint.style.opacity = "0";
       idx++; cracked = false;
-      zoneW = halfWidth(streak, d);
-      zoneC = Math.max(zoneW, Math.min(1 - zoneW, blocks[idx % blocks.length].c));
+      setZone(blocks[idx % blocks.length].c);
       logGone = true;
       later(() => { dropAt = performance.now(); logGone = false; }, 90);
     }
 
-    const onDown = (e) => { if (e.button > 0 || phase !== "play") return; e.preventDefault(); swing(); };
-    const onKey = (e) => { if ((e.code === "Space" || e.key === "Enter") && phase === "play" && !e.repeat) { e.preventDefault(); swing(); } };
+    const onDown = (e) => { if (e.button > 0 || phase !== "play") return; e.preventDefault(); swing(e.timeStamp); };
+    const onKey = (e) => { if ((e.code === "Space" || e.key === "Enter") && phase === "play" && !e.repeat) { e.preventDefault(); swing(e.timeStamp); } };
+    // Tab weg (app-wissel, telefoontje): de klok staat stil, anders ben je je 20 s kwijt.
+    const onVis = () => {
+      if (document.hidden) { if (phase === "play" && !hiddenAt) hiddenAt = performance.now(); }
+      else if (hiddenAt) { t0 += performance.now() - hiddenAt; hiddenAt = 0; lastFrame = 0; }
+    };
     root.addEventListener("pointerdown", onDown);
     document.addEventListener("keydown", onKey);
+    document.addEventListener("visibilitychange", onVis);
 
     // --- Tekenen ---
     const mAng = (p) => Math.PI * (1.12 + 0.76 * p); // meterboog: van links-boven naar rechts-boven
@@ -584,7 +644,7 @@
       }
       // gloeiend vak + perfect-kern
       const a0 = mAng(Math.max(0, visC - visW)), a1 = mAng(Math.min(1, visC + visW));
-      const pk = Math.max(0.016, visW * PERFECT_K);
+      const pk = visPk;
       const live = phase === "play" || phase === "howto" || phase === "count";
       const pulse = 0.75 + 0.25 * Math.sin(ts * 6) + glow * 0.4;
       g.globalAlpha = live ? 1 : 0.5;
@@ -608,15 +668,26 @@
       g.shadowBlur = 0; g.globalAlpha = 1;
       // naald (met spoor)
       const p = phase === "howto" ? needle(ts * 1000, d) : needleNow(t);
-      trail.push(p); if (trail.length > 6) trail.shift();
+      const ms = ts * 1000; // spoor op tijd (laatste 80 ms), niet per frame: zelfde look op 60 en 120 Hz
+      trail.push({ p, ms }); while (trail.length > 2 && ms - trail[0].ms > 80) trail.shift();
       g.lineCap = "round";
       trail.forEach((q, i) => {
         if (i === trail.length - 1) return;
-        const a = mAng(q);
-        g.strokeStyle = "rgba(255,231,184," + (0.05 + i * 0.04) + ")"; g.lineWidth = 3;
+        const a = mAng(q.p);
+        g.strokeStyle = "rgba(255,231,184," + (0.05 + 0.22 * Math.max(0, 1 - (ms - q.ms) / 80)) + ")"; g.lineWidth = 3;
         g.beginPath(); g.moveTo(cx + Math.cos(a) * mR * 0.35, mY + Math.sin(a) * mR * 0.35); g.lineTo(cx + Math.cos(a) * (mR + tw * 0.6), mY + Math.sin(a) * (mR + tw * 0.6)); g.stroke();
       });
       const a = mAng(p);
+      // waar je laatste tik viel: groen-goud bij raak, blauw bij mis (leert je timing)
+      if (lastTap) {
+        const age = (performance.now() - lastTap.at) / 900;
+        if (age < 1) {
+          const la = mAng(lastTap.p), r0 = mR - tw * 0.9, r1 = mR + tw * 0.9;
+          g.strokeStyle = lastTap.res === "miss" ? "rgba(140,190,255," + (1 - age) + ")" : "rgba(255,243,208," + (1 - age) + ")";
+          g.lineWidth = 3; g.lineCap = "round";
+          g.beginPath(); g.moveTo(cx + Math.cos(la) * r0, mY + Math.sin(la) * r0); g.lineTo(cx + Math.cos(la) * r1, mY + Math.sin(la) * r1); g.stroke();
+        }
+      }
       const inZone = Math.abs(p - zoneC) <= zoneW;
       g.shadowColor = inZone ? "rgba(255,243,208,1)" : "rgba(255,194,71,.7)"; g.shadowBlur = inZone ? 16 : 8;
       g.strokeStyle = inZone ? "#fff6dc" : "#ffd98a"; g.lineWidth = 4;
@@ -631,8 +702,9 @@
       if (phase !== "howto" && swings > 0) {
         g.textAlign = "center"; g.textBaseline = "alphabetic";
         g.font = "900 " + Math.round(mR * 0.26) + "px Unbounded, system-ui, sans-serif";
-        g.fillStyle = streak ? "#ffc247" : "rgba(184,169,154,.5)";
-        g.shadowColor = "rgba(255,106,26,.7)"; g.shadowBlur = streak ? 14 : 0;
+        // reeks wordt heter: goud → oranje gloed (×5) → witheet (×10)
+        g.fillStyle = !streak ? "rgba(184,169,154,.5)" : streak >= 10 ? "#fff3d0" : streak >= 5 ? "#ffd27a" : "#ffc247";
+        g.shadowColor = streak >= 10 ? "rgba(255,194,71,1)" : "rgba(255,106,26,.8)"; g.shadowBlur = !streak ? 0 : streak >= 5 ? 24 : 14;
         g.fillText("×" + streak, cx, mY + mR * 0.42);
         g.shadowBlur = 0;
         g.font = "700 " + Math.max(10, Math.round(mR * 0.075)) + "px system-ui, sans-serif";
@@ -645,9 +717,7 @@
     function drawLantern(ts) {
       const { lanX, lanY, ground } = L;
       const fl = 0.85 + 0.15 * Math.sin(ts * 9.1) * Math.sin(ts * 3.7);
-      const lg = g.createRadialGradient(lanX, lanY, 4, lanX, lanY + H * 0.08, Math.min(W, H) * 0.55);
-      lg.addColorStop(0, "rgba(255,150,60," + 0.3 * fl + ")"); lg.addColorStop(0.4, "rgba(255,106,26," + 0.1 * fl + ")"); lg.addColorStop(1, "rgba(255,106,26,0)");
-      g.fillStyle = lg; g.fillRect(0, L.horizon - H * 0.2, W, H);
+      g.globalAlpha = fl; g.drawImage(lanGlow, 0, 0, W, H); g.globalAlpha = 1;
       // paal
       g.fillStyle = "#1a100a"; g.fillRect(lanX - 3, lanY - 6, 6, ground - lanY + 16);
       g.fillRect(lanX - 3, lanY - 14, 16, 4);
@@ -700,6 +770,7 @@
       const { cx, stumpTop, lrx, lry } = L;
       const b = blocks[idx % blocks.length];
       const im = b.knot ? knotImg : logImg;
+      if (!im) return;
       const dk = Math.min(1, (now - dropAt) / 260);
       let dy = 0;
       if (dk < 1) dy = dk < 0.7 ? -H * 0.09 * (1 - Math.pow(dk / 0.7, 2)) : -6 * Math.sin(((dk - 0.7) / 0.3) * Math.PI);
@@ -707,7 +778,7 @@
       g.save();
       if (dk < 0.5) g.globalAlpha = dk * 2;
       g.translate(cx, stumpTop + dy);
-      if (wobble > 0.01) g.rotate(Math.sin(now / 30) * 0.06 * wobble);
+      if (wobble > 0.01 && !reduced) g.rotate(Math.sin(now / 30) * 0.06 * wobble);
       g.fillStyle = "rgba(0,0,0,.4)"; g.beginPath(); g.ellipse(4, 2, lrx * 1.1, lry * 1.1, 0, 0, TAU); g.fill();
       g.drawImage(im.img, -im.w / 2, -(im.h - lry - 2), im.w, im.h);
       if (cracked) { // barst
@@ -773,11 +844,12 @@
     function drawStack(now) {
       const { pr } = L;
       stack.forEach((s) => {
-        if (s.pop < 0) return;
+        const at = slotPos(s.slot);
+        if (s.pop < 0 || !at) return;
         const e = Math.min(1, (now - s.pop) / 260);
         const sc = e < 1 ? 1 + 0.35 * Math.sin(e * Math.PI) : 1;
         const r = pr * s.j.r * sc;
-        g.save(); g.translate(s.x, s.y); g.rotate(s.j.a);
+        g.save(); g.translate(at.x, at.y); g.rotate(s.j.a);
         [-1, 1].forEach((side) => {
           g.save(); g.translate(side * 1.2, 0);
           g.beginPath(); g.arc(0, 0, r, side < 0 ? Math.PI / 2 : -Math.PI / 2, side < 0 ? Math.PI * 1.5 : Math.PI / 2); g.closePath();
@@ -855,8 +927,11 @@
 
     function frame(now) {
       if (dead) return;
-      raf = requestAnimationFrame(frame);
-      if (!L || !W) layout();
+      // na de uitslag: nog even doortekenen tot de laatste helften liggen, dan stil (scheelt accu achter de blur)
+      if (phase === "result" && !pieces.length && performance.now() - resultAt > 1600) looping = false;
+      else raf = requestAnimationFrame(frame);
+      // vangnet zonder ResizeObserver (of als hij een draai mist): af en toe de maat checken
+      if (!L || W <= 1 || (++chk % 30 === 0 && (Math.abs(root.clientWidth - W) > 1 || Math.abs(root.clientHeight - H) > 1))) layout();
       const dt = Math.min(0.05, (now - (lastFrame || now)) / 1000);
       lastFrame = now;
       const ts = (now - now0) / 1000, t = playT();
@@ -874,7 +949,7 @@
 
       // uitdempen
       shake *= Math.pow(0.0015, dt); flash *= Math.pow(0.02, dt); gold *= Math.pow(0.05, dt); wobble *= Math.pow(0.01, dt); glow *= Math.pow(0.1, dt);
-      visC += (zoneC - visC) * Math.min(1, dt * 18); visW += (zoneW - visW) * Math.min(1, dt * 14);
+      visC += (zoneC - visC) * Math.min(1, dt * 18); visW += (zoneW - visW) * Math.min(1, dt * 14); visPk += (zonePk - visPk) * Math.min(1, dt * 14);
       for (let i = parts.length - 1; i >= 0; i--) {
         const p = parts[i];
         p.life += dt; p.x += p.vx * dt; p.y += p.vy * dt;
@@ -893,19 +968,20 @@
       for (let i = pieces.length - 1; i >= 0; i--) {
         const p = pieces[i];
         p.life += dt; p.gold *= Math.pow(0.1, dt);
-        if (p.life < 0.42 || !p.target) {
+        const target = p.slot != null ? slotPos(p.slot) : null;
+        if (p.life < 0.42 || !target) {
           p.vy += 1500 * dt; p.x += p.vx * dt; p.y += p.vy * dt; p.rot += p.vr * dt;
-          if (!p.target && (p.y > H + 80 || p.life > 1.6)) { pieces.splice(i, 1); continue; }
-          if (p.target) { p.sx = p.x; p.sy = p.y; p.sr = p.rot; }
+          if (!target && (p.y > H + 80 || p.life > 1.6)) { pieces.splice(i, 1); continue; }
+          if (target) { p.sx = p.x; p.sy = p.y; p.sr = p.rot; }
         } else {
           const q = Math.min(1, (p.life - 0.42) / 0.36), e = q * q * (3 - 2 * q);
-          p.x = lerp(p.sx, p.target.x + p.side * 2, e); p.y = lerp(p.sy, p.target.y, e) - Math.sin(q * Math.PI) * 40;
+          p.x = lerp(p.sx, target.x + p.side * 2, e); p.y = lerp(p.sy, target.y, e) - Math.sin(q * Math.PI) * 40;
           p.rot = lerp(p.sr, p.side * Math.PI / 2 + Math.round(p.sr / Math.PI) * Math.PI, e);
           p.scale = lerp(1, (L.pr * 2) / L.lh, e);
           if (q >= 1) {
             pieces.splice(i, 1);
-            const s = stack.find((s) => s.x === p.target.x && s.y === p.target.y);
-            if (s && s.pop < 0) { s.pop = now; beep(300 + Math.random() * 60, 0.05, "triangle", 0.04); puffAt(s.x, s.y - L.pr); }
+            const s = stack[p.slot];
+            if (s && s.pop < 0) { s.pop = now; beep(300 + Math.random() * 60, 0.05, "triangle", 0.04); puffAt(target.x, target.y - L.pr); }
           }
         }
       }
@@ -949,9 +1025,7 @@
         g.restore();
       }
       // koude rand
-      const vg = g.createRadialGradient(W / 2, H * 0.5, Math.min(W, H) * 0.45, W / 2, H * 0.5, Math.max(W, H) * 0.75);
-      vg.addColorStop(0, "rgba(6,8,14,0)"); vg.addColorStop(1, "rgba(6,8,14,.65)");
-      g.fillStyle = vg; g.fillRect(-20, -20, W + 40, H + 40);
+      g.drawImage(vig, -20, -20, W + 40, H + 40);
     }
     function puffAt(x, y) {
       for (let i = 0; i < 4 && parts.length < 360; i++) parts.push({ k: "snow", x: x + (Math.random() - 0.5) * 10, y, vx: (Math.random() - 0.5) * 60, vy: -40 * Math.random(), life: 0, max: 0.5, s: 1.5 + Math.random() * 2 });
@@ -962,6 +1036,7 @@
     function finish() {
       if (phase !== "play") return;
       phase = "result";
+      resultAt = performance.now();
       const r = result();
       const v = valid(r), ratio = points(v) / c.par;
       hint.style.opacity = "0"; hud.style.opacity = "0";
@@ -989,10 +1064,12 @@
       beep(1, 0.001, "sine", 0.0001); // audio ontgrendelen binnen het gebaar
       how.remove();
       hud.style.opacity = "1"; hint.style.opacity = "1";
-      ctx.countdown(root).then(() => {
+      const cd = typeof ctx.countdown === "function" ? ctx.countdown(root) : M.countdown(root, { sfx: ctx.sfx });
+      cd.then(() => {
         if (dead) return;
         t0 = performance.now();
         phase = "play";
+        if (typeof document !== "undefined" && document.hidden) hiddenAt = t0; // afgeteld terwijl de app weg was
       });
     });
 
@@ -1003,7 +1080,8 @@
     // Testhaakje (alleen voor Playwright): leesbare speltoestand, geen globale variabele.
     Object.defineProperty(root, "_bijl", { value: {
       get phase() { return phase; }, get t() { return playT(); }, get needle() { return needleNow(playT()); },
-      get zone() { return { c: zoneC, w: zoneW }; }, get busy() { return playT() < busyUntil; }, cfg: c, result,
+      get zone() { return { c: zoneC, w: zoneW, pk: zonePk }; }, get busy() { return playT() < busyUntil; }, get looping() { return looping; },
+      cfg: c, lag: INPUT_LAG, result,
     }, enumerable: false });
 
     return {
@@ -1014,6 +1092,7 @@
         if (ro) ro.disconnect();
         root.removeEventListener("pointerdown", onDown);
         document.removeEventListener("keydown", onKey);
+        document.removeEventListener("visibilitychange", onVis);
         root.remove();
       },
     };
@@ -1022,7 +1101,7 @@
   const def = {
     id: "bijl", title: "Bijl", icon: "🪓", kind: "local", duration: 20,
     howto: "Tik als de zwaaiende naald in het gloeiende vak staat: elke treffer klooft een blok voor de kachel.",
-    mount, score, bot, plan, needle, halfWidth, judge, points, CFG, DURATION,
+    mount, score, bot, simulate, plan, needle, speedAt, halfWidth, zone, judge, earlyLate, points, CFG, DURATION, INPUT_LAG,
   };
   M.register(def);
   if (typeof module === "object" && module.exports) module.exports = def;

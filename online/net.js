@@ -23,6 +23,9 @@
  *       onStatus(s): "connecting" | "online" | "reconnecting" | "offline" (only on change).
  *       On every connect: presence "1" is republished; mqtt.js resubscribes automatically.
  *       Browser: visibilitychange hidden → visible (and window "online") reconnects when disconnected.
+ *       Browser: window "offline" (navigator.onLine false) parks the connection: the socket is closed at once
+ *       (the broker's Last Will then reports presence "0"), no futile retries while offline, and it reconnects
+ *       as soon as the network is back ("online" event, page visible again, or a 3 s onLine poll).
  *   room.code, room.pid, room.brokerIndex, room.brokerUrl, room.status, room.connected, room.client
  *   room.subscribeState(cb)           cb(stateObj | null)  null = retained cleared          → unsubscribe()
  *   room.subscribePrivate(key, cb)    cb(payload | null)                                    → unsubscribe()
@@ -228,8 +231,9 @@
     const code = cleanCode(o.code);
     const pid = o.pid ? String(o.pid) : null;
     const T = topics(code);
-    const hasDoc = typeof document !== "undefined" && document && typeof document.addEventListener === "function";
-    const hasWin = typeof window !== "undefined" && window && typeof window.addEventListener === "function";
+    // Eén keer vastleggen: detach() moet dezelfde objecten gebruiken, ook als de globals later veranderen
+    const doc = typeof document !== "undefined" && document && typeof document.addEventListener === "function" ? document : null;
+    const win = typeof window !== "undefined" && window && typeof window.addEventListener === "function" ? window : null;
 
     const subs = new Map(); // filter → Set(handler(topic, payload))
     const last = new Map(); // topic → laatste payload (retained-achtige topics), voor late handlers op hetzelfde filter
@@ -276,21 +280,44 @@
       }
     });
 
+    // Netwerk weg (navigator.onLine false): de socket is dan dood of gaat dood, maar zonder netwerk merkt de
+    // keepalive dat pas na ~30 s. Dus meteen "parkeren": hard dicht (de Last Will meldt ons offline), geen zinloze
+    // pogingen, en direct opnieuw verbinden zodra het netwerk terug is. De outbox in ui.js verstuurt daarna alles.
+    let parked = false, parkT = null;
+    const isOffline = () => typeof navigator !== "undefined" && !!navigator && navigator.onLine === false;
+    const park = () => {
+      if (closed || parked || !isOffline()) return;
+      parked = true;
+      try { client.end(true); } catch (e) { /* al dicht */ }
+      setStatus("offline");
+      parkT = setInterval(() => { if (!isOffline()) unpark(); }, 3000); // vangnet als "online" uitblijft
+    };
+    const unpark = () => {
+      if (!parked || closed) return;
+      parked = false;
+      clearInterval(parkT); parkT = null;
+      setStatus("reconnecting");
+      try { client.reconnect(); } catch (e) { /* volgende poging via timer */ }
+    };
     // Telefoon uit standby / netwerk terug: meteen opnieuw verbinden i.p.v. op de timer te wachten
     const kick = () => {
-      if (closed || client.connected || client.disconnecting) return;
+      if (closed) return;
+      if (parked) { if (!isOffline()) unpark(); return; }
+      if (client.connected || client.disconnecting) return;
       try { client.reconnect(); } catch (e) { /* volgende poging via timer */ }
     };
     const onVisibility = () => {
-      if (document.visibilityState === "hidden") { wasHidden = true; return; }
+      if (doc.visibilityState === "hidden") { wasHidden = true; return; }
       if (wasHidden) { wasHidden = false; kick(); }
     };
-    if (hasDoc) document.addEventListener("visibilitychange", onVisibility);
-    if (hasWin) window.addEventListener("online", kick);
+    if (doc) doc.addEventListener("visibilitychange", onVisibility);
+    if (win) { win.addEventListener("online", kick); win.addEventListener("offline", park); }
     const detach = () => {
-      if (hasDoc) document.removeEventListener("visibilitychange", onVisibility);
-      if (hasWin) window.removeEventListener("online", kick);
+      clearInterval(parkT); parkT = null;
+      if (doc) doc.removeEventListener("visibilitychange", onVisibility);
+      if (win) { win.removeEventListener("online", kick); win.removeEventListener("offline", park); }
     };
+    if (win) park(); // al offline bij het openen: niet blijven proberen tot het netwerk er is
 
     const subscribe = (filter, fn) => {
       let set = subs.get(filter);

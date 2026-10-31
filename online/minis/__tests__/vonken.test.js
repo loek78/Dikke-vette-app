@@ -121,7 +121,7 @@ test("score: meer gevangen = meer blokken; mvp, namen en totalen kloppen", () =>
   assert.ok(strong.lines.some((l) => l.includes("Loek") && l.includes("40")));
   assert.ok(strong.lines.some((l) => l.includes("3 dikke sintels")));
   assert.ok(strong.lines.some((l) => l.includes("30 op rij")));
-  assert.ok(strong.lines.some((l) => l.includes("Samen 77 vonken") && l.includes("5 schroeiplekken")));
+  assert.ok(strong.lines.some((l) => l.includes("Samen 77 vonken") && l.includes("5 op het kleed")));
   assert.strictEqual(strong.perPlayer.p1, "37 gevangen · 4 op het kleed");
   // Hetzelfde percentage telt zwaarder op een hogere moeilijkheid.
   const r = { p0: { caught: 18, missed: 7 } }, one = [PLAYERS[0]];
@@ -140,6 +140,32 @@ test("score: ontbrekende speler wordt genoemd en drukt de score", () => {
   assert.ok(none.logs >= -2 && none.logs <= 3 && none.mvp === null);
   const empty = def.score(null, {});
   assert.ok(Number.isInteger(empty.logs));
+});
+
+test("score: 6 spelers (deels afwezig) blijft binnen de grenzen en noemt iedereen", () => {
+  const six = ["Loek", "Jacques", "Sanne", "Mo", "Iris", "Daan"].map((name, i) => ({ pid: "p" + i, name }));
+  for (const d of [1, 2, 3]) {
+    const results = {};
+    six.forEach((p, i) => { results[p.pid] = i % 3 === 2 ? null : def.bot(DVMini.rng(100 + i), d); });
+    const sc = def.score(results, { difficulty: d, players: six });
+    assert.ok(Number.isInteger(sc.logs) && sc.logs >= -2 && sc.logs <= 3);
+    assert.ok(sc.lines.every((l) => l.length <= 140));
+    assert.ok(sc.lines.some((l) => l.includes("Sanne") && l.includes("andere kant")));
+    assert.ok(sc.lines.some((l) => l.includes("Daan") && l.includes("andere kant")));
+    assert.deepStrictEqual(Object.keys(sc.perPlayer).sort(), six.map((p) => p.pid).sort());
+    assert.ok(six.some((p) => p.pid === sc.mvp));
+  }
+});
+
+test("teksten kloppen: reeks-regel beweert niet dat er niets landde, niveaunamen botsen niet met de hoofdstuktitel", () => {
+  const players = PLAYERS.slice(0, 2);
+  const sc = def.score({ p0: { caught: 40, missed: 20, combo: 25 }, p1: { caught: 30, missed: 30 } }, { difficulty: 3, players });
+  const line = sc.lines.find((l) => l.includes("25 op rij"));
+  assert.ok(line && !/geen vonk/i.test(line), line);
+  assert.ok(sc.lines.some((l) => l.includes("Samen 70 vonken gevangen, 50 op het kleed")));
+  const names = [1, 2, 3].map((d) => def.CFG[d].name);
+  assert.strictEqual(new Set(names).size, 3);
+  assert.ok(!names.includes("Vonkenregen"), "kicker toont al 'Vonkenregen · <niveau>'");
 });
 
 test("module lekt niets naar de globale scope en mount raakt de DOM pas bij aanroep", () => {

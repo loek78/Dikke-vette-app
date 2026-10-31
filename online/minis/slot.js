@@ -29,9 +29,9 @@
   const CFG = {
     1: { name: "Roestig slot", limit: 150, rep: false, types: ["is", "not", "grp", "absent", "left", "next", "even", "odd"],
       cap: { is: 2 }, sample: 6, prune: false, min: 4, max: 6, fb: "ring" },
-    2: { name: "Zwaar slot", limit: 120, rep: false, types: ["is", "not", "grp", "ngrp", "absent", "left", "next", "apart", "even", "odd", "fam", "nfam", "cnt"],
+    2: { name: "Zwaar slot", limit: 130, rep: false, types: ["is", "not", "grp", "ngrp", "absent", "left", "next", "apart", "even", "odd", "fam", "nfam", "cnt"],
       cap: { is: 1, not: 2 }, sample: 3, prune: true, min: 5, max: 7, fb: "count" },
-    3: { name: "Vorstslot", limit: 105, rep: true, types: ["not", "grp", "ngrp", "absent", "left", "next", "apart", "even", "odd", "fam", "nfam", "cnt", "dup", "ndup", "once", "twice"],
+    3: { name: "Vorstslot", limit: 120, rep: true, types: ["not", "grp", "ngrp", "absent", "left", "next", "apart", "even", "odd", "fam", "nfam", "cnt", "dup", "ndup", "once", "twice"],
       cap: { not: 2, ndup: 2 }, sample: 2, prune: true, min: 6, max: 8, fb: "none" },
   };
   const dl = (d) => Math.max(1, Math.min(3, Math.round(d) || 1));
@@ -163,7 +163,9 @@
 
   // Tekst van een aanwijzing: delen = strings of tokens { r, form } (rune) / { g } (familie).
   const NUM = ["geen", "één", "twee", "drie", "vier"];
-  function partsOf(s) {
+  // rep (Vorstslot, tekens kunnen dubbel): lidwoord "een" bij links/naast en "alleen op" bij even/oneven,
+  // zodat "het ijs staat links van de vlam" én andersom niet als tegenspraak leest als er twee keer ijs is.
+  function partsOf(s, rep) {
     const R = (r, form) => ({ r, form }), F = (g) => ({ g }), ring = (i) => "ring " + (i + 1);
     switch (s.t) {
       case "is": return ["Op " + ring(s.i) + " staat ", R(s.r, "de"), "."];
@@ -171,11 +173,11 @@
       case "grp": return ["Ring " + (s.i + 1) + " komt uit de familie ", F(s.g), "."];
       case "ngrp": return ["Ring " + (s.i + 1) + " komt níét uit de familie ", F(s.g), "."];
       case "absent": return ["Geen enkele ring toont ", R(s.r, "een"), "."];
-      case "left": return [R(s.a, "De"), " staat ergens links van ", R(s.b, "de"), "."];
-      case "next": return ["Direct rechts naast ", R(s.a, "de"), " staat ", R(s.b, "de"), "."];
+      case "left": return rep ? [R(s.a, "Een"), " staat ergens links van ", R(s.b, "ind"), "."] : [R(s.a, "De"), " staat ergens links van ", R(s.b, "de"), "."];
+      case "next": return rep ? ["Direct rechts naast ", R(s.a, "ind"), " staat ", R(s.b, "ind"), "."] : ["Direct rechts naast ", R(s.a, "de"), " staat ", R(s.b, "de"), "."];
       case "apart": return [R(s.a, "De"), " en ", R(s.b, "de"), " staan nooit naast elkaar."];
-      case "even": return [R(s.r, "De"), " staat op een even ring (2 of 4)."];
-      case "odd": return [R(s.r, "De"), " staat op een oneven ring (1 of 3)."];
+      case "even": return [R(s.r, "De"), rep ? " staat alleen op even ringen (2 of 4)." : " staat op een even ring (2 of 4)."];
+      case "odd": return [R(s.r, "De"), rep ? " staat alleen op oneven ringen (1 of 3)." : " staat op een oneven ring (1 of 3)."];
       case "fam": return ["Ring " + (s.i + 1) + " en " + ring(s.j) + " komen uit dezelfde familie."];
       case "nfam": return ["Ring " + (s.i + 1) + " en " + ring(s.j) + " komen uit een andere familie."];
       case "cnt": return s.n === 0 ? ["Geen enkele ring komt uit de familie ", F(s.g), "."]
@@ -190,6 +192,7 @@
   function runeWord(r, form) {
     const x = RUNES[r];
     if (form === "De") return x.de.charAt(0).toUpperCase() + x.de.slice(1);
+    if (form === "Een" || form === "ind") return (form === "Een" ? "Een " : "een ") + x.n;
     return form === "de" ? x.de : form === "een" ? x.een : x.n;
   }
   const textOf = (parts) => parts.map((p) => (typeof p === "string" ? p : p.g ? FAMS[p.g].name : runeWord(p.r, p.form))).join("");
@@ -214,7 +217,7 @@
     const gids = pids.filter((pid) => pid !== slot && rr[pid] !== "slot");
     Object.keys(rr).forEach((pid) => { if (rr[pid] === "gids" && !gids.includes(pid) && pid !== slot) gids.push(pid); });
     const { code, specs } = genPuzzle(rng, d, gids.length);
-    const clues = specs.map((s, i) => { const parts = partsOf(s); return { id: i, spec: s, parts, text: textOf(parts) }; });
+    const clues = specs.map((s, i) => { const parts = partsOf(s, c.rep); return { id: i, spec: s, parts, text: textOf(parts) }; });
     // Verdelen: om de beurt, zodat bij 3+ spelers iedere gids een eigen stuk heeft.
     const hold = {};
     gids.forEach((g) => { hold[g] = []; });
@@ -245,7 +248,8 @@
         if (!isSlot && !shared.gids.includes(pid)) return shared;
         if (shared.started.includes(pid)) return shared;
         const next = Object.assign({}, shared, { started: shared.started.concat([pid]) });
-        if (isSlot && shared.t0 === null) next.t0 = now !== null ? now : 0;
+        // De klok loopt vanaf de eerste die begint: een gids ziet dan al de aanwijzingen, dus vooruit puzzelen telt mee.
+        if (shared.t0 === null) next.t0 = now !== null ? now : 0;
         return next;
       }
       case "rot": {
@@ -368,7 +372,7 @@
 
   // ---------- UI ----------
   const CSS = `
-.sl{position:relative;width:100%;height:100%;min-height:480px;overflow:hidden;color:var(--glow,#ffe7b8);
+.sl{position:relative;width:100%;height:100%;min-height:480px;overflow:hidden;color:var(--glow,#ffe7b8);container-type:inline-size;
   font-family:system-ui,-apple-system,"Segoe UI",sans-serif;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;
   background:
     radial-gradient(120% 70% at 0% 18%,rgba(255,120,40,.26),rgba(255,106,26,0) 55%),
@@ -385,7 +389,7 @@
 .sl-scr{position:absolute;inset:0;z-index:4;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;
   padding:max(20px,env(safe-area-inset-top)) 20px max(22px,env(safe-area-inset-bottom))}
 .sl-kicker{font:800 11px/1.2 system-ui,sans-serif;letter-spacing:.2em;text-transform:uppercase;color:var(--ember,#ff6a1a)}
-.sl-title{font-size:clamp(36px,11.5vw,52px);line-height:1;margin:8px 0 0;
+.sl-title{font-size:clamp(36px,11.5vw,52px);font-size:clamp(34px,13cqw,52px);line-height:1;margin:8px 0 0;
   background:linear-gradient(180deg,#fff3d0,var(--flame,#ffc247) 45%,var(--ember,#ff6a1a));-webkit-background-clip:text;background-clip:text;color:transparent;
   filter:drop-shadow(0 0 18px rgba(255,106,26,.45))}
 .sl-role{display:inline-flex;align-items:center;gap:8px;margin-top:16px;padding:9px 16px;border-radius:99px;font:900 14px/1 "Unbounded",system-ui,sans-serif;
@@ -476,7 +480,9 @@
   background:radial-gradient(circle at 20% 10%,rgba(200,230,255,.5),rgba(90,169,255,.18) 40%,rgba(160,210,255,.32));
   box-shadow:inset 0 0 30px rgba(190,225,255,.7);animation:sl-frost 1.2s ease-out both}
 @keyframes sl-frost{from{opacity:0}to{opacity:1}}
-.sl-mark{height:22px;display:flex;align-items:center;justify-content:center;font:900 13px/1 system-ui,sans-serif}
+.sl-mark{height:22px;display:flex;align-items:center;justify-content:center;font:900 16px/1 system-ui,sans-serif}
+.sl-win.ok{box-shadow:inset 0 0 0 2px var(--flame,#ffc247),inset 0 0 22px rgba(255,194,71,.35),0 0 18px rgba(255,194,71,.5)}
+.sl-win.no{box-shadow:inset 0 0 0 2px rgba(232,64,28,.8),inset 0 0 0 3px rgba(0,0,0,.8),0 0 12px rgba(232,64,28,.35)}
 .sl-mark.ok{color:var(--flame,#ffc247);text-shadow:0 0 10px rgba(255,194,71,.9)}
 .sl-mark.no{color:#c24a2e}
 .sl-try{margin-top:0;min-width:240px;display:inline-flex;align-items:center;justify-content:center;gap:10px}
@@ -489,7 +495,8 @@
 .sl-att i.ok{background:var(--flame,#ffc247);box-shadow:0 0 6px var(--flame,#ffc247)}
 .sl-att.win{border-color:rgba(255,194,71,.7)}
 /* Gids */
-.sl-scroll{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;touch-action:pan-y;padding:4px 16px max(18px,env(safe-area-inset-bottom))}
+.sl-scroll{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;touch-action:pan-y;padding:8px 16px max(18px,env(safe-area-inset-bottom));
+  -webkit-mask-image:linear-gradient(180deg,rgba(0,0,0,0),#000 14px);mask-image:linear-gradient(180deg,rgba(0,0,0,0),#000 14px)}
 .sl-ghead{display:flex;align-items:center;gap:12px;margin:2px 0 10px}
 .sl-ghead .sl-role{margin:0;padding:7px 11px;font-size:11px}
 .sl-ghead h3{margin:0;font:900 17px/1.15 "Unbounded",system-ui,sans-serif;color:var(--glow,#ffe7b8)}
@@ -513,7 +520,7 @@
 .sl-clue.read::after{content:"✓";position:absolute;right:12px;top:10px;font:900 16px/1 system-ui;color:#6a3a12}
 .sl-clue .no{flex:none;width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;margin-top:1px;
   font:900 13px/1 "Unbounded",system-ui,sans-serif;color:var(--flame,#ffc247);background:#2a1608;box-shadow:0 0 0 2px rgba(106,58,18,.5)}
-.sl-clue .tx{flex:1;min-width:0;padding-right:10px}
+.sl-clue .tx{flex:1;min-width:0;padding-right:16px}
 .sl-rn{display:inline-flex;align-items:center;gap:3px;font-weight:800;white-space:nowrap;padding:0 6px 0 3px;border-radius:8px;background:rgba(42,22,8,.88);color:#ffe7b8;vertical-align:-3px}
 .sl-rn .sl-glyph{--gs:19px}
 .sl-fm{display:inline-flex;align-items:center;gap:2px;font-weight:800;white-space:nowrap;padding:0 6px;border-radius:8px;background:rgba(42,22,8,.88);color:#ffe7b8;vertical-align:-3px}
@@ -539,7 +546,7 @@
 .sl-res{gap:6px;justify-content:center;background:linear-gradient(180deg,rgba(11,7,5,.95),rgba(11,7,5,.86) 60%,rgba(11,7,5,.7));animation:sl-fade .5s ease-out both;
   -webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
 @keyframes sl-fade{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
-.sl-big{font-size:clamp(54px,18vw,84px);line-height:.95;margin:6px 0 2px;
+.sl-big{font-size:clamp(54px,18vw,84px);font-size:clamp(46px,19cqw,84px);line-height:.95;margin:6px 0 2px;
   background:linear-gradient(180deg,#fff3d0,var(--flame,#ffc247) 50%,var(--ember,#ff6a1a));-webkit-background-clip:text;background-clip:text;color:transparent;
   filter:drop-shadow(0 0 22px rgba(255,106,26,.5))}
 .sl-big.cold{background:linear-gradient(180deg,#f2f8ff,#9fd3ff 50%,#5aa9ff);-webkit-background-clip:text;background-clip:text;filter:drop-shadow(0 0 22px rgba(90,169,255,.45))}
@@ -559,7 +566,8 @@
 @keyframes sl-breathe{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(.7);opacity:.6}}
 @media (min-height:780px){.sl-lock{--wh:172px;--fh:80px}.sl-face .sl-glyph{--gs:42px}.sl-arr{height:46px}}
 @media (max-height:700px){.sl-lock{--wh:128px;--fh:60px;padding-top:54px}.sl-shackle{height:96px}.sl-arr{height:36px}.sl-msg{min-height:38px}}
-@media (prefers-reduced-motion:reduce){.sl-demo span,.sl-wait i,.sl-lock.shake,.sl-code span{animation:none}.sl-drum.snap{transition-duration:.01s}}
+@media (prefers-reduced-motion:reduce){.sl-demo span,.sl-wait i,.sl-lock.shake,.sl-code span,.sl-msg.pop,.sl-flash.on,.sl-res,.sl-pat i.out::after,
+  .sl-lock.open .sl-face.cur{animation:none}.sl-drum.snap{transition-duration:.01s}.sl-shackle{transition:none}}
 `;
 
   function injectCss() {
@@ -746,7 +754,12 @@
       const cur = idx(k);
       u.faces.forEach((f, i) => f.classList.toggle("cur", i === cur));
     }
-    function clearMark(k) { const m = ringUI[k].mark; m.textContent = ""; m.className = "sl-mark"; }
+    function clearMark(k) { const m = ringUI[k].mark; m.textContent = ""; m.className = "sl-mark"; ringUI[k].win.classList.remove("ok", "no"); }
+    function markRing(k, ok) {
+      const u = ringUI[k];
+      u.mark.textContent = ok ? "✓" : "✗"; u.mark.className = "sl-mark " + (ok ? "ok" : "no");
+      u.win.classList.toggle("ok", ok); u.win.classList.toggle("no", !ok);
+    }
     function turn(k, delta) {
       // delta in hele stappen vanaf de huidige rustpositie; stuurt de netto draai naar de host
       if (phase !== "play" || busy) return;
@@ -800,6 +813,7 @@
         const end = (e) => {
           if (!drag || e.pointerId !== drag.id) return;
           const dg = drag; drag = null;
+          if (!dg.moved && e.type === "pointercancel") { pos[k] = dg.p0; setDrum(k, true); return; } // geen spookstap
           if (!dg.moved) {
             // tik: bovenste helft = omhoog, onderste = omlaag
             const r = win.getBoundingClientRect();
@@ -865,10 +879,11 @@
     function buildGids() {
       const sc = h("div", "sl-scroll");
       const head = h("div", "sl-ghead");
-      head.appendChild(h("div", "sl-role g", "Gids"));
+      const kijk = role !== "gids";
+      head.appendChild(h("div", "sl-role g", kijk ? "Kijker" : "Gids"));
       const ht = h("div");
-      ht.appendChild(h("h3", null, "Lees voor aan " + slotName));
-      ht.appendChild(h("p", null, slotName + " ziet alleen het slot. Jij alleen dit."));
+      ht.appendChild(h("h3", null, kijk ? "Je kijkt mee" : "Lees voor aan " + slotName));
+      ht.appendChild(h("p", null, kijk ? slotName + " draait, " + gidsNames + " " + (v && v.gids.length > 1 ? "lezen" : "leest") + " voor." : slotName + " ziet alleen het slot. Jij alleen dit."));
       head.appendChild(ht);
       sc.appendChild(head);
       sc.appendChild(h("div", "sl-rule" + (v && v.rep ? " warn" : ""), v && v.rep ? "⚠️ Let op: tekens kunnen dubbel voorkomen!" : "Elk teken komt hooguit één keer voor. Ringen tel je van links (1) naar rechts (4)."));
@@ -882,6 +897,22 @@
         fams.appendChild(f);
       });
       sc.appendChild(fams);
+      if (!kijk) buildClues(sc);
+      sc.appendChild(h("div", "sl-sec", "Pogingen van " + slotName));
+      gAtt = h("div", "sl-gatt");
+      gAtt.appendChild(h("div", "sl-none", "Nog niks geprobeerd."));
+      sc.appendChild(gAtt);
+      play.appendChild(sc);
+    }
+
+    // Kladblok + "voorgelezen" overleven een herlaadbeurt midden in het spel (alleen in deze browser).
+    const noteKey = "dva:slot-notes:" + (ctx.seed >>> 0) + ":" + me;
+    const notes = (() => { try { return JSON.parse(sessionStorage.getItem(noteKey)) || {}; } catch (e) { return {}; } })();
+    const saveNotes = () => { try { sessionStorage.setItem(noteKey, JSON.stringify(notes)); } catch (e) { /* privémodus */ } };
+    notes.pad = Array.isArray(notes.pad) && notes.pad.length === N * RINGS ? notes.pad : Array(N * RINGS).fill(0);
+    notes.read = Array.isArray(notes.read) ? notes.read : [];
+
+    function buildClues(sc) {
       const sec = h("div", "sl-sec", "Jouw aanwijzingen");
       sec.appendChild(h("small", null, "tik = voorgelezen"));
       sc.appendChild(sec);
@@ -897,7 +928,12 @@
         });
         li.appendChild(tx);
         li.setAttribute("data-clue", cl.text);
-        on(li, "click", () => { li.classList.toggle("read"); beep(900, 0.02, "sine", 0.03); });
+        if (notes.read.includes(cl.id)) li.classList.add("read");
+        on(li, "click", () => {
+          const r = li.classList.toggle("read");
+          notes.read = notes.read.filter((x) => x !== cl.id).concat(r ? [cl.id] : []); saveNotes();
+          beep(900, 0.02, "sine", 0.03);
+        });
         ul.appendChild(li);
       });
       if (!v || !v.clues || !v.clues.length) ul.appendChild(h("li", "sl-none", "Jij hebt deze keer geen aanwijzingen. Help met denken!"));
@@ -915,17 +951,14 @@
         const rl = h("span", "rl"); rl.appendChild(glyph(r)); rl.appendChild(document.createTextNode(rn.n)); pad.appendChild(rl);
         for (let k = 0; k < RINGS; k++) {
           const b = h("button", "sl-cell", "✗"); b.type = "button"; b.setAttribute("aria-label", rn.n + " op ring " + (k + 1));
-          let st = 0;
-          on(b, "click", () => { st = (st + 1) % 3; b.className = "sl-cell" + (st === 1 ? " x" : st === 2 ? " v" : ""); b.textContent = st === 2 ? "✓" : "✗"; beep(st === 2 ? 1200 : 700, 0.015, "sine", 0.025); });
+          const ci = r * RINGS + k;
+          const paint = () => { const st = notes.pad[ci]; b.className = "sl-cell" + (st === 1 ? " x" : st === 2 ? " v" : ""); b.textContent = st === 2 ? "✓" : "✗"; };
+          paint();
+          on(b, "click", () => { notes.pad[ci] = (notes.pad[ci] + 1) % 3; paint(); saveNotes(); beep(notes.pad[ci] === 2 ? 1200 : 700, 0.015, "sine", 0.025); });
           pad.appendChild(b);
         }
       });
       sc.appendChild(pad);
-      sc.appendChild(h("div", "sl-sec", "Pogingen van " + slotName));
-      gAtt = h("div", "sl-gatt");
-      gAtt.appendChild(h("div", "sl-none", "Nog niks geprobeerd."));
-      sc.appendChild(gAtt);
-      play.appendChild(sc);
     }
 
     function renderTries() {
@@ -947,7 +980,7 @@
         tryBtn.disabled = false; tryBtn.lastChild.textContent = "Open het slot";
         shake();
         if (Array.isArray(t.fb)) {
-          t.fb.forEach((ok, k) => { const m = ringUI[k].mark; m.textContent = ok ? "✓" : "✗"; m.className = "sl-mark " + (ok ? "ok" : "no"); });
+          t.fb.forEach((ok, k) => { if (idx(k) === t.code[k]) markRing(k, ok); });
           const n = t.fb.filter(Boolean).length;
           say(n ? n + (n === 1 ? " ring zit" : " ringen zitten") + " goed. " + (left ? "Nog " + left + (left === 1 ? " poging." : " pogingen.") : "") : "Geen enkele ring goed. " + (GLOEI_WRONG[MAX_TRIES - 1 - left] || ""), "bad");
         } else if (typeof t.fb === "number") {
@@ -969,7 +1002,7 @@
       if (dn.solved) {
         renderTries();
         if (tryBtn) { tryBtn.disabled = true; tryBtn.classList.add("won"); tryBtn.lastChild.textContent = "Open!"; }
-        ringUI.forEach((u) => { u.mark.textContent = "✓"; u.mark.className = "sl-mark ok"; });
+        ringUI.forEach((u, k) => markRing(k, true));
         if (lock) {
           lock.classList.add("open");
           const r = lock.getBoundingClientRect(), rr = root.getBoundingClientRect();
@@ -1007,7 +1040,10 @@
 
     function startTimer() {
       if (tick) return;
-      tRef = v && v.t0 && Math.abs(Date.now() - v.t0) < 30000 ? v.t0 : Date.now();
+      // Hostklok (t0) gebruiken zolang die geloofwaardig is: ook na herladen midden in het spel loopt de tijd door.
+      // Alleen bij een duidelijk scheve klok (t0 in de toekomst of al lang voorbij) vallen we terug op nu.
+      const el = v && v.t0 ? Date.now() - v.t0 : NaN;
+      tRef = el > -5000 && el < limit * 1000 + 60000 ? v.t0 : Date.now();
       let lastSec = -1;
       const upd = () => {
         if (dead || phase !== "play") return;
@@ -1026,7 +1062,12 @@
       phase = "play";
       if (role === "slot") buildSlot(); else buildGids();
       root.appendChild(play);
-      if (role === "slot") layoutRings();
+      if (role === "slot") {
+        layoutRings();
+        // na herladen: de ✓/✗ van de laatste poging terug op ringen die nog zo staan (roestig slot)
+        const lt = v && !v.done && v.tries[v.tries.length - 1];
+        if (lt && Array.isArray(lt.fb)) lt.fb.forEach((ok, k) => { if (idx(k) === lt.code[k]) markRing(k, ok); });
+      }
       renderTries();
       if (role === "slot" || (v && v.running)) startTimer();
       else timeEl.textContent = "—";
@@ -1048,12 +1089,17 @@
     });
 
     fit();
-    on(window, "resize", () => { fit(); if (ringUI.length) layoutRings(); });
+    // Containermaat volgen (draaien, venster, of een story-podium dat later pas zijn maat krijgt).
+    const relayout = () => { if (dead) return; fit(); if (ringUI.length) layoutRings(); };
+    let ro = null;
+    if (typeof ResizeObserver === "function") { ro = new ResizeObserver(relayout); ro.observe(root); }
+    else on(window, "resize", relayout);
     raf = requestAnimationFrame(frame);
 
     // Terugkomen na herladen: al begonnen → meteen spelen; al klaar → meteen resultaat.
     if (v && v.done) { how.remove(); phase = "count"; enterPlay(); }
     else if (v && v.started && role !== "kijker") { how.remove(); enterPlay(); }
+    else if (v && v.running && role === "kijker") { how.remove(); enterPlay(); }
 
     // Testhaakje (alleen voor Playwright): leesbare toestand, geen globale variabele.
     Object.defineProperty(root, "_slot", { value: { get phase() { return phase; }, get rings() { return role === "slot" ? current() : null; }, role, get view() { return v; } }, enumerable: false });
@@ -1063,7 +1109,11 @@
         if (dead || !nv) return;
         const prev = v;
         v = nv;
-        if (phase === "howto" || phase === "count") { seenTries = v.tries.length; if (v.done && phase === "howto") { how.remove(); phase = "count"; enterPlay(); } return; }
+        if (phase === "howto" || phase === "count") {
+          seenTries = v.tries.length;
+          if (phase === "howto" && (v.done || (role === "kijker" && v.running))) { how.remove(); if (v.done) phase = "count"; enterPlay(); }
+          return;
+        }
         if (phase !== "play") return;
         if (role === "gids" && v.running && !(prev && prev.running)) { startTimer(); say("Lees je aanwijzingen hardop voor!"); }
         if (v.tries.length > seenTries) {
@@ -1077,6 +1127,7 @@
       destroy() {
         dead = true;
         cancelAnimationFrame(raf);
+        if (ro) ro.disconnect();
         clearInterval(tick); clearTimeout(busyT);
         timers.forEach(clearTimeout); timers.clear();
         offs.forEach((f) => f()); offs.length = 0;

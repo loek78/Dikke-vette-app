@@ -20,7 +20,7 @@
  *            [data-act=start|share|leave|seen|peek|peek-card|hint-input|hint-send|hint-aloud|skip|force-vote|
  *            vote-pick (+data-pid)|vote-submit|close-vote|hints-sheet|guess-input|guess-send|next|again|to-lobby|
  *            exit|player (+data-pid)|kick|confirm|cancel|mode|seg-*|cat], [data-word] (geheime woord op de kaart)
- *   window.DVOnline.debug() → { pub, priv, me, status, outbox }
+ *   window.DVOnline.debug() → { pub, priv, me, status, outbox, presence }
  *   window.DVOnline.preview(vm) → render het kamerscherm met een vaste vm (alleen bij ?preview); DVOnline.qrSvg(text) → <svg>
  *
  * Preview (design-QA): ?preview=lobby|lobby-host|lobby-wait|reveal|reveal-blind-infiltrant|hints|hints-myturn|vote|
@@ -187,7 +187,10 @@
   const C = { session: null, room: null, status: "idle", pub: null, priv: null, presence: {}, outbox: [], host: null, ended: null, since: 0, leaving: false };
   let retxIv = null, retryT = null, unsubs = [], opening = null;
   const sentAt = new Map(); // seq → laatste verzendtijd (alleen in geheugen)
-  const ectx = () => ({ rng: Math.random, now: Date.now(), words: window.DV_WORDPAIRS });
+  // Engine-context van de host: echte tijd, de woordenlijst en een crypto-rng (rollen en woorden eerlijk verdeeld).
+  const u32 = new Uint32Array(1);
+  const rng = () => { try { crypto.getRandomValues(u32); return u32[0] / 4294967296; } catch (e) { return Math.random(); } };
+  const ectx = () => ({ rng, now: Date.now(), words: window.DV_WORDPAIRS });
 
   function saveSession() {
     if (!C.session) return;
@@ -737,6 +740,7 @@
     const bar = h("header", { class: "o-bar" }, codeBtn, pill, leave);
     const banner = h("div", { class: "o-banner", role: "status" });
     const stage = h("main", { class: "o-stage" });
+    stage.addEventListener("click", (e) => { if (ghostTap(e)) { e.preventDefault(); e.stopImmediatePropagation(); } }, true);
     root.replaceChildren(bar, banner, stage);
     shell = { root, section: root.closest(".screen"), bar, codeB, codeBtn, pill, pillT, leave, banner, stage };
     return shell;
@@ -782,6 +786,23 @@
   let cur = { key: null, view: null, name: null };
   let vtBusy = false;
   let latest = null;
+  // Een verse fase is heel even niet aan te tikken. Anders landt een dubbele tik op de vorige knop op de nieuwe
+  // knop op dezelfde plek ("Uitslag" → "Nog een potje", "Volgende ronde" → "Nu stemmen"). Vooral zonder
+  // View Transitions (iOS < 18, minder beweging) wisselt het scherm meteen en raakt de tweede tik de nieuwe fase.
+  // Twee lagen: `inert` blokkeert direct, en een tik telt alleen als de vinger pas ná het verschijnen (+ marge)
+  // neerging. Dat laatste kijkt naar de tijdstempel van de pointerdown, dus het werkt ook als de telefoon het
+  // scherm traag tekent en de tweede tik pas na afloop van `inert` verwerkt wordt.
+  const TAP_GUARD_MS = 450;
+  let guardT = null, viewAt = -Infinity, downAt = -Infinity;
+  function guardTaps(el) {
+    if (PREVIEW) return;
+    viewAt = performance.now();
+    el.inert = true;
+    clearTimeout(guardT);
+    guardT = setTimeout(() => { el.inert = false; }, TAP_GUARD_MS);
+  }
+  document.addEventListener("pointerdown", (e) => { downAt = e.timeStamp; }, true);
+  function ghostTap(e) { return e.detail > 0 && downAt < viewAt + TAP_GUARD_MS; } // detail 0 = toetsenbord/programma
   function pickView(v) {
     if (v.ended) return { name: "ended", key: "ended:" + v.ended };
     const pub = v.pub;
@@ -826,6 +847,7 @@
       sh.section.dataset.phase = name === "ended" || name === "connecting" ? name : lv.pub.phase;
       sh.section.dataset.mood = mood(lv);
       sh.stage.replaceChildren(view.el);
+      guardTaps(sh.stage);
       view.update(lv);
       if (view.mounted) view.mounted(lv);
       window.scrollTo(0, 0);
@@ -1222,7 +1244,11 @@
       input.value = ""; counter.textContent = "0/32"; input.blur();
     }
     const feed = h("section", { class: "o-feed o-rise", style: { "--i": 3 } });
-    const skip = btn([icon("skip"), " Beurt overslaan"], "skip", "o-btn-glass o-btn-sm", () => { sfx.tap(); act("skip"); });
+    let skipAt = 0; // dubbele tik = één beurt overslaan (de view blijft staan, dus de tap-guard helpt hier niet)
+    const skip = btn([icon("skip"), " Beurt overslaan"], "skip", "o-btn-glass o-btn-sm", () => {
+      if (Date.now() - skipAt < 600) return;
+      skipAt = Date.now(); sfx.tap(); act("skip");
+    });
     const force = btn([icon("lock"), " Nu stemmen"], "force-vote", "o-btn-glass o-btn-sm", () => { sfx.tap(); act("forceVote"); });
     const dock = v0.me.isHost ? h("div", { class: "o-dock o-dock-tools", "aria-label": "Host" }, skip, force) : null;
     const el = h("div", { class: "o-view o-hints" }, head.el, w && h("p", { class: "o-watch-pill o-rise", text: w }), spot, form, order, feed, dock);
@@ -1323,6 +1349,7 @@
         this0.update(latest);
       });
       submit = h("button", { class: "o-btn o-btn-primary o-btn-hero", type: "button", "data-act": "vote-submit", onclick: () => {
+        if (latest.pending.has("vote") || latest.pub.voted.includes(latest.me.pid)) return; // stem is al onderweg
         if (!sel) { shake(grid); toast("Tik eerst op iemand"); return; }
         myVote = { key: vkey, pid: sel };
         sfx.lock(); buzz([20, 40, 60]);
@@ -1522,6 +1549,7 @@
         form.addEventListener("submit", (e) => {
           e.preventDefault();
           const t = input.value.trim();
+          if (latest.pending.has("guess")) return; // gok is al onderweg
           if (!t) { shake(input); return; }
           sfx.lock(); buzz(20);
           act("guess", { text: t.slice(0, 32) });
@@ -1881,7 +1909,7 @@
   }
 
   window.DVOnline = {
-    debug: () => ({ pub: C.pub, priv: C.priv, me: C.session && { pid: C.session.pid, isHost: C.session.isHost, code: C.session.code }, status: C.status, outbox: C.outbox.slice() }),
+    debug: () => ({ pub: C.pub, priv: C.priv, me: C.session && { pid: C.session.pid, isHost: C.session.isHost, code: C.session.code }, status: C.status, outbox: C.outbox.slice(), presence: Object.assign({}, C.presence) }),
     // Preview / design-QA: render het kamerscherm met een vaste vm (zonder netwerk)
     preview(v) {
       previewVm = Object.assign({ presence: {}, pending: new Set(), status: "online", host: null, ended: null, brokerIndex: 0, since: Date.now() }, v);

@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#182666">
+<title>KerstFX demo</title>
+<link rel="icon" href="../icons/icon.svg">
+<!-- QA-pagina voor kerst/effects.js + kerst/audio.js (niet gelinkt vanuit de app).
+     ?fx=snoepregen,noorderlicht   start deze effecten bij het laden        ?t=3.2   loop deterministisch 3.2 s vooruit en bevries
+     ?panel=0   verberg de knoppen (screenshots)                            ?dpr=1   DPR-plafond (standaard 2)
+     ?reduced=1 forceer reduced motion                                      ?seed=7  seed van fx
+     Test-hooks: window.__fxdemo = { fx, world, step(dt), bench(frames), errors, taken } -->
+<style>
+  :root { --ink: #fff6e8; --dim: #c9cfee; --card: rgba(16, 20, 60, .72); --line: rgba(255,255,255,.16); }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; background: #0f1a44; color: var(--ink); font: 16px/1.3 system-ui, -apple-system, "Segoe UI", sans-serif; overflow: hidden; }
+  #c { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: manipulation; }
+  #hud { position: fixed; left: 10px; top: max(10px, env(safe-area-inset-top)); display: flex; gap: 8px; align-items: center; z-index: 3; pointer-events: none; }
+  #hud .pill { background: rgba(0,0,0,.42); border-radius: 999px; padding: 6px 12px; font-weight: 800; font-size: 18px; backdrop-filter: blur(4px); }
+  #perf { position: fixed; right: 10px; top: max(10px, env(safe-area-inset-top)); font: 12px/1.3 ui-monospace, monospace; color: var(--dim); background: rgba(0,0,0,.45); padding: 6px 8px; border-radius: 8px; z-index: 3; text-align: right; }
+  #toast { position: fixed; left: 50%; top: 32%; transform: translate(-50%, -50%) scale(.6); font-weight: 900; font-size: 44px; color: #ffd14f; -webkit-text-stroke: 2px #3a2826; text-shadow: 0 4px 0 #3a2826; opacity: 0; transition: opacity .25s, transform .25s; pointer-events: none; z-index: 4; }
+  #toast.show { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  #panel { position: fixed; left: 0; right: 0; bottom: 0; background: var(--card); border-top: 1px solid var(--line); padding: 8px 10px calc(10px + env(safe-area-inset-bottom)); backdrop-filter: blur(8px); z-index: 5; max-height: 46vh; overflow-y: auto; }
+  #panel h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--dim); margin: 8px 0 6px; }
+  .row { display: flex; flex-wrap: wrap; gap: 6px; }
+  button, select { font: inherit; font-weight: 800; font-size: 15px; color: #1a1030; background: linear-gradient(#ffe08a, #f2a83a); border: 0; border-radius: 999px; min-height: 40px; padding: 0 13px; }
+  button.ghost { background: rgba(255,255,255,.1); color: var(--ink); border: 1px solid var(--line); }
+  button.on { background: linear-gradient(#b8f2d9, #49b075); }
+  button.fx { background: linear-gradient(#ffd3e8, #ff8ad6); }
+  button.au { background: linear-gradient(#cde8ff, #6fb6ff); }
+  #hide { position: fixed; right: 10px; bottom: calc(46vh + 8px); z-index: 6; }
+  body.nopanel #panel, body.nopanel #hide { display: none; }
+  #hide.min { bottom: calc(10px + env(safe-area-inset-bottom)); }
+  #panel.min { display: none; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="hud"><span class="pill">⭐ <span id="stars">0</span></span><span class="pill" id="evname">—</span></div>
+<div id="perf">fx – ms<br><span id="pc">0 deeltjes</span></div>
+<div id="toast"></div>
+<button id="hide" class="ghost" type="button">Knoppen ▾</button>
+<section id="panel" aria-label="Effecten">
+  <h2>Verrassingen (SPEC-4 §3)</h2>
+  <div class="row" id="fxrow"></div>
+  <h2>Bursts (bij de speler)</h2>
+  <div class="row" id="burstrow"></div>
+  <h2>Geluid</h2>
+  <div class="row" id="aurow"></div>
+  <h2>Muziek</h2>
+  <div class="row" id="musicrow"></div>
+</section>
+
+<script src="art.js"></script>
+<script src="effects.js"></script>
+<script src="audio.js"></script>
+<script>
+(function () {
+  "use strict";
+  const Q = new URLSearchParams(location.search);
+  const errors = [];
+  addEventListener("error", (e) => errors.push(String(e.message || e)));
+  addEventListener("unhandledrejection", (e) => errors.push(String(e.reason && e.reason.message || e.reason)));
+
+  const A = window.KerstArt, FX = window.KerstFX, AU = window.KerstAudio;
+  const canvas = document.getElementById("c"), ctx = canvas.getContext("2d");
+  const $ = (id) => document.getElementById(id);
+  const DPR_CAP = +Q.get("dpr") || 2;
+  let W = 390, H = 844, dpr = 1, Z = 1, GY = 600, PSX = 100;
+  const PAR = [0, 0.12, 0.3, 0.55, 0.85];
+  const frozen = Q.has("t");
+  const fx = FX.create(canvas, { standalone: true, seed: +Q.get("seed") || 1, reducedMotion: Q.get("reduced") === "1" ? true : null });
+
+  // ---- mock-wereld: Vlok rent, springt af en toe; wereld-eenheden zoals game.js (y = hoogte boven de grond) ----
+  const P = { x: 0, y: 0, vy: 0, onGround: true, anim: "run", jumpT: 1.6, t: 0, speed: 260 };
+  let stars = 0, taken = 0, camX = 0, lastEv = "—";
+  const names = ["Luke", "Viola", "Rivka", "Zara"];
+  function resize() {
+    W = innerWidth || 390; H = innerHeight || 844; dpr = Math.min(DPR_CAP, devicePixelRatio || 1);
+    canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
+    Z = Math.min(Math.max(Math.min(W / 640, H / 700), 0.4), 1.15);
+    GY = H * (H > W ? 0.68 : 0.74); PSX = W * 0.26;
+    if (A) { A.dpr = dpr; A.groundPx = GY; }
+  }
+  addEventListener("resize", resize); resize();
+  const world = () => ({ cam: { x: camX, y: 0 }, w: W, h: H, player: { x: P.x, y: P.y }, speed: P.speed, t: P.t, z: Z, groundY: GY, playerScreenX: PSX, flip: 0, phase: "run" });
+  const sx = (wx) => (wx - camX) * Z, sy = (wy) => GY - wy * Z;
+
+  function stepWorld(dt) {
+    P.t += dt; P.x += P.speed * dt; camX = P.x - PSX / Z;
+    if (P.onGround) { P.jumpT -= dt; if (P.jumpT <= 0) { P.onGround = false; P.vy = 850; P.anim = "jump"; fx.burst("jump", P.x, 0, 6); P.jumpT = 1.6 + Math.random() * 1.6; } }
+    else { P.vy -= 2125 * dt; P.y += P.vy * dt; if (P.vy < 0) P.anim = "fall"; if (P.y <= 0) { P.y = 0; P.vy = 0; P.onGround = true; P.anim = "run"; fx.burst("land", P.x, 0, 8); } }
+    // snoep en cadeaus die de speler raakt
+    for (const c of fx.collectables()) { const dx = c.x - P.x, dy = c.y - (P.y + 45); if (dx * dx + dy * dy < (c.r + 40) * (c.r + 40)) { c.take(); taken++; stars += c.kind === "gift" ? 5 : 3; if (AU) AU.play(c.kind === "gift" ? "gift" : "candy"); } }
+  }
+  function hash(i, j) { let x = (i * 374761393 + (j | 0) * 668265263 + 1274126177) | 0; x = ((x ^ (x >>> 13)) * 1274126177) | 0; x ^= x >>> 16; return (x >>> 0) / 4294967296; }
+  function drawWorld(t) {
+    const th = fx.theme;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.save();
+    const sh = fx.shake; ctx.translate(sh.x, sh.y);
+    if (A) {
+      for (let l = 0; l <= 4; l++) A.background(ctx, l, camX * Z * PAR[l], W, H, t, th);
+      fx.drawBack(ctx, world());
+      // decoratie (deterministisch per 'tegel' van 420 wereld-eenheden)
+      const tile = 420, i0 = Math.floor((camX - 200) / tile), i1 = Math.ceil((camX + W / Z + 200) / tile);
+      const DECO = ["tree1", "tree2", "tree3", "signpost", "house", "snowman", "tree2", "snowdrift"];
+      for (let i = i0; i <= i1; i++) { const r = hash(i, 9); if (r < 0.35) continue; const nm = DECO[Math.floor(hash(i, 3) * DECO.length)]; A.blit(ctx, nm, sx(i * tile + hash(i, 5) * 300), GY, Z * (0.8 + hash(i, 7) * 0.5), { theme: th }); }
+      // grond
+      const gname = th === "peperkoek" ? "gingerGroundTile" : "groundTile", gw = 128 * Z;
+      for (let x = -((camX * Z) % gw) - gw; x < W + gw; x += gw) A.blit(ctx, gname, x, GY, Z, { theme: th });
+      // Vlok
+      ctx.save(); ctx.translate(PSX, sy(P.y)); A.animal(ctx, "hert", P.anim, t, { scale: Z, blush: true }); ctx.restore();
+    } else { ctx.fillStyle = "#182666"; ctx.fillRect(0, 0, W, H); fx.drawBack(ctx, world()); ctx.fillStyle = "#fff"; ctx.fillRect(0, GY, W, H - GY); }
+    fx.drawFront(ctx, world());
+    ctx.restore();
+  }
+
+  // ---- loop + meting (update + drawBack + drawFront van fx) ----
+  const perf = { n: 0, sum: 0, max: 0, samples: [] };
+  let fxMs = 0;
+  function measureFx(dt) {
+    const t0 = performance.now();
+    fx.update(dt, world());
+    fxMs = performance.now() - t0; // drawBack/drawFront worden in drawWorld gemeten via wrap
+  }
+  const rawBack = fx.drawBack, rawFront = fx.drawFront;
+  fx.drawBack = (c, w) => { const t0 = performance.now(); rawBack(c, w); fxMs += performance.now() - t0; };
+  fx.drawFront = (c, w) => { const t0 = performance.now(); rawFront(c, w); fxMs += performance.now() - t0; };
+  function frame(dt) {
+    stepWorld(dt); measureFx(dt); drawWorld(P.t);
+    perf.n++; perf.sum += fxMs; perf.max = Math.max(perf.max, fxMs); perf.samples.push(fxMs); if (perf.samples.length > 240) perf.samples.shift();
+    if (perf.n % 20 === 0) { const s = perf.samples.slice().sort((a, b) => a - b); $("perf").innerHTML = `fx ${(perf.sum / perf.n).toFixed(2)} ms · p95 ${s[Math.floor(s.length * 0.95)].toFixed(2)}<br><span id="pc">${fx.particleCount} deeltjes · ${fx.events.join(",") || "rust"}</span>`; perf.sum = 0; perf.n = 0; }
+    $("stars").textContent = stars;
+    const ev = fx.events[0] || "—"; if (ev !== lastEv) { lastEv = ev; $("evname").textContent = ev; }
+  }
+  let last = 0;
+  function raf(now) {
+    if (frozen) return;
+    requestAnimationFrame(raf);
+    let dt = (now - last) / 1000; last = now; if (!(dt > 0)) dt = 0; dt = Math.min(dt, 0.05);
+    frame(dt);
+  }
+
+  // ---- knoppen ----
+  const LABELS = { noorderlicht: "🌌 Noorderlicht", sterrenregen: "🌠 Sterrenregen", snoepregen: "🍬 Snoepregen", peperkoek: "🍪 Peperkoek", droomflip: "🙃 Droomflip", sneeuwbol: "❄️ Sneeuwbol", rendiervlucht: "🦌 Rendiervlucht", reuzenboom: "🎄 Reuzenboom", schaatsbaan: "⛸️ Schaatsbaan", kerstman: "🛷 Kerstman", sneeuwpop: "⛄ Sneeuwpop", finale: "🎆 Finale", geheimpje: "🌙 Geheimpje" };
+  const btn = (row, label, cls, fn) => { const b = document.createElement("button"); b.type = "button"; b.textContent = label; b.className = cls; b.addEventListener("click", () => { if (AU) AU.init(); fn(b); }); $(row).appendChild(b); return b; };
+  for (const id of FX.EVENT_IDS) btn("fxrow", LABELS[id] || id, "fx", () => trigger(id));
+  btn("fxrow", "⏹ Stop alles", "ghost", () => { fx.destroy(); location.reload(); });
+  for (const k of ["star", "candy", "confetti", "bell", "bauble", "land", "hurt", "revive", "powerup", "shield", "wish", "splash"]) btn("burstrow", k, "ghost", () => fx.burst(k, P.x, P.y + 50, 14));
+  if (AU) {
+    for (const nm of AU.SFX_NAMES) btn("aurow", nm, "au", () => AU.play(nm));
+    btn("aurow", "melodyNote 0-4", "au", () => { let i = 0; const h = setInterval(() => { AU.melodyNote(i++); if (i >= 5) clearInterval(h); }, 700); });
+    btn("aurow", "duck", "au", () => AU.duck(900));
+    for (const th of AU.THEMES.concat("off")) btn("musicrow", "🎵 " + th, "au", (b) => { AU.setMusic(th); for (const o of $("musicrow").children) o.classList.toggle("on", o === b); });
+    const mb = btn("musicrow", AU.muted ? "🔇 Geluid uit" : "🔊 Geluid aan", "ghost", (b) => { AU.setMuted(!AU.muted); b.textContent = AU.muted ? "🔇 Geluid uit" : "🔊 Geluid aan"; });
+    mb.classList.add("mute");
+  }
+  function trigger(id) {
+    fx.trigger(id, { names, by: "Rivka", x: id === "geheimpje" && A ? A.moonAt(W, H).x : undefined, y: id === "geheimpje" && A ? A.moonAt(W, H).y : undefined });
+    if (A && id === "geheimpje") { A.moonWink = true; setTimeout(() => { A.moonWink = false; }, 2500); }
+    if (AU) { AU.duck(700); if (id === "noorderlicht") AU.setMusic("aurora"); else if (id === "peperkoek") AU.setMusic("peperkoek"); else if (id === "finale") AU.play("fanfare"); else if (id === "sneeuwbol") AU.play("revive"); else if (id === "droomflip") AU.play("whoosh"); else if (id === "kerstman") AU.play("bell"); else AU.play("twinkle"); }
+    if (AU && (id === "noorderlicht" || id === "peperkoek")) setTimeout(() => { if (fx.theme === "nacht") AU.setMusic("nacht"); }, FX.EVENTS[id] * 1000 + 100);
+  }
+  $("hide").addEventListener("click", () => { const p = $("panel"); p.classList.toggle("min"); $("hide").classList.toggle("min", p.classList.contains("min")); $("hide").textContent = p.classList.contains("min") ? "Knoppen ▴" : "Knoppen ▾"; });
+  if (Q.get("panel") === "0") document.body.classList.add("nopanel");
+
+  // tik op het canvas: wens vangen (grote ster) of springen
+  let toastT = 0;
+  function toast(txt) { const el = $("toast"); el.textContent = txt; el.classList.add("show"); clearTimeout(toastT); toastT = setTimeout(() => el.classList.remove("show"), 1100); }
+  canvas.addEventListener("pointerdown", (e) => {
+    if (AU) AU.init();
+    const r = canvas.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
+    const wish = fx.hitTest(x, y);
+    if (wish) { stars += wish.stars; toast("✨ Wens! +" + wish.stars); if (AU) { AU.play("wish"); AU.play("twinkle"); } return; }
+    if (P.onGround) { P.onGround = false; P.vy = 850; P.anim = "jump"; fx.burst("jump", P.x, 0, 6); if (AU) AU.play("jump"); }
+    else if (P.vy < 500) { P.vy = 760; fx.burst("sparkle", P.x, P.y + 20, 6); if (AU) AU.play("doubleJump"); }
+  });
+
+  // ---- start (+ ?fx= en ?t=) ----
+  const auto = (Q.get("fx") || "").split(",").map((s) => s.trim()).filter(Boolean);
+  for (const id of auto) fx.trigger(id, { names, by: "Rivka" });
+  if (frozen) { const T = Math.max(0, +Q.get("t") || 0); for (let i = 0, n = Math.round(T * 60); i < n; i++) frame(1 / 60); if (!auto.length) frame(1 / 60); }
+  else requestAnimationFrame((n) => { last = n; raf(n); });
+
+  // ---- test-hooks ----
+  window.__fxdemo = {
+    fx, errors, get world() { return world(); }, get stars() { return stars; }, get taken() { return taken; },
+    step(dt, n) { for (let i = 0; i < (n || 1); i++) frame(dt || 1 / 60); },
+    trigger(id, data) { return fx.trigger(id, Object.assign({ names, by: "Rivka" }, data || {})); },
+    // meet update+drawBack+drawFront van fx over `frames` frames op een eigen canvas, met een flush (getImageData) per
+    // frame zodat ook het rasteren meetelt; de mock-wereld wordt niet getekend en telt dus niet mee
+    bench(frames) {
+      const bc = document.createElement("canvas"); bc.width = canvas.width; bc.height = canvas.height; const bx = bc.getContext("2d", { willReadFrequently: true });
+      const out = [];
+      for (let i = 0; i < (frames || 240); i++) {
+        stepWorld(1 / 60);
+        const t0 = performance.now();
+        fx.update(1 / 60, world());
+        bx.setTransform(dpr, 0, 0, dpr, 0, 0); bx.clearRect(0, 0, W, H); rawBack(bx, world()); rawFront(bx, world()); bx.getImageData(0, 0, 1, 1);
+        out.push(performance.now() - t0);
+      }
+      out.sort((a, b) => a - b); const avg = out.reduce((a, b) => a + b, 0) / out.length;
+      return { avg, p50: out[out.length >> 1], p95: out[Math.floor(out.length * 0.95)], max: out[out.length - 1], particles: fx.particleCount, dpr, w: W, h: H };
+    },
+  };
+})();
+</script>
+</body>
+</html>

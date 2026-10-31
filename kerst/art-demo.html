@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#182666">
+<title>KerstArt demo</title>
+<link rel="icon" href="../icons/icon.svg">
+<!-- QA-pagina voor kerst/art.js (niet gelinkt vanuit de app).
+     ?t=2.3   bevries de tijd (voor screenshots)      ?hat=1   kerstmuts op      ?blush=1   extra blosjes
+     ?anim=run  startpose van de grote Vlok           ?scroll=800  startpositie van de achtergrond-demo -->
+<style>
+  :root { --bg: #0f1a44; --ink: #fff6e8; --dim: #b8c0e8; --card: rgba(255,255,255,.06); --line: rgba(255,255,255,.14); }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 640px; margin: 0 auto; padding: max(12px, env(safe-area-inset-top)) 12px 48px; }
+  h1 { font-size: 22px; margin: 6px 0 0; }
+  h2 { font-size: 17px; margin: 22px 0 8px; color: var(--dim); font-weight: 600; }
+  .sub { margin: 2px 0 10px; color: var(--dim); font-size: 13px; }
+  canvas { display: block; width: 100%; border-radius: 16px; background: var(--card); border: 1px solid var(--line); }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; align-items: center; }
+  button, select { font: inherit; font-weight: 700; color: #1a1030; background: linear-gradient(#ffe08a, #f2a83a); border: 0; border-radius: 999px; min-height: 40px; padding: 0 14px; }
+  button.on { background: linear-gradient(#b8f2d9, #49b075); }
+  button.ghost { background: var(--card); color: var(--ink); border: 1px solid var(--line); }
+  #hero { height: 340px; background: linear-gradient(#182666, #8d86cc); }
+  #strip { height: 120px; margin-top: 8px; }
+  #sheet { aspect-ratio: 390 / 900; }
+  #sprites { aspect-ratio: 390 / 1000; }
+  .bg canvas { aspect-ratio: 390 / 560; margin-bottom: 10px; }
+  #fps { position: fixed; right: 8px; top: max(8px, env(safe-area-inset-top)); font: 11px/1 ui-monospace, monospace; color: var(--dim); background: rgba(0,0,0,.4); padding: 4px 6px; border-radius: 6px; z-index: 2; }
+  .small { font-size: 12px; color: var(--dim); }
+</style>
+</head>
+<body>
+<div id="fps">– fps</div>
+<main>
+  <h1>🦌 KerstArt demo</h1>
+  <p class="sub">QA voor <code>kerst/art.js</code> — Vlok, Pluis, Snuf &amp; Oeki, alle sprites en de 3 droomwerelden.</p>
+
+  <h2>Grote Vlok</h2>
+  <canvas id="hero" width="390" height="340"></canvas>
+  <canvas id="strip" width="390" height="120"></canvas>
+  <div class="row" id="animBtns"></div>
+  <div class="row">
+    <button id="hat" class="ghost" type="button">🎅 Kerstmuts</button>
+    <button id="blush" class="ghost" type="button">😊 Blosjes</button>
+    <button id="flip" class="ghost" type="button">↔️ Omdraaien</button>
+    <select id="heroKind"><option value="hert">Vlok (hert)</option><option value="konijn">Pluis (konijn)</option><option value="vos">Snuf (vos)</option><option value="uil">Oeki (uil)</option></select>
+  </div>
+
+  <h2>Alle dieren × alle animaties</h2>
+  <canvas id="sheet" width="390" height="900"></canvas>
+
+  <h2>Alle sprites</h2>
+  <canvas id="sprites" width="390" height="1000"></canvas>
+
+  <h2>Achtergronden (5 parallax-lagen + grond)</h2>
+  <div class="bg">
+    <canvas data-theme="nacht" width="390" height="560"></canvas>
+    <canvas data-theme="aurora" width="390" height="560"></canvas>
+    <canvas data-theme="peperkoek" width="390" height="560"></canvas>
+  </div>
+  <p class="small">Lagen: lucht · heuvels · bos · bomen · sneeuwhopen, daarna grondtegels + de renner. Parallax 0.05 / 0.2 / 0.45 / 0.75 / 0.95.</p>
+</main>
+<script src="art.js"></script>
+<script>
+  "use strict";
+  const A = window.KerstArt, qs = new URLSearchParams(location.search);
+  const frozen = qs.has("t") ? +qs.get("t") : null;
+  const $ = (id) => document.getElementById(id);
+  const DPR = Math.min(2, window.devicePixelRatio || 1); A.dpr = DPR;
+  const errors = []; window.addEventListener("error", (e) => errors.push(String(e.message)));
+  const state = { hat: qs.has("hat") ? "kerstmuts" : null, blush: qs.has("blush"), facing: 1, anim: qs.get("anim") || "run", kind: qs.get("kind") || "hert" };
+  const t0 = performance.now();
+  const now = () => frozen != null ? frozen : (performance.now() - t0) / 1000;
+
+  // size a canvas to its CSS box at DPR, return ctx in CSS px
+  function fit(c) {
+    const r = c.getBoundingClientRect(), w = Math.round(r.width), h = Math.round(r.height);
+    if (c.width !== w * DPR || c.height !== h * DPR) { c.width = w * DPR; c.height = h * DPR; }
+    const g = c.getContext("2d"); g.setTransform(DPR, 0, 0, DPR, 0, 0); g.clearRect(0, 0, w, h);
+    c._w = w; c._h = h; return g;
+  }
+  const label = (g, text, x, y, size) => { g.font = (size || 11) + "px system-ui, sans-serif"; g.fillStyle = "rgba(255,246,232,.8)"; g.textAlign = "center"; g.fillText(text, x, y); };
+
+  // --- hero
+  const hero = $("hero"), btns = $("animBtns");
+  for (const a of A.ANIMS) { const b = document.createElement("button"); b.type = "button"; b.textContent = a; b.className = a === state.anim ? "on" : "ghost"; b.onclick = () => { state.anim = a; [...btns.children].forEach((x) => x.className = x.textContent === a ? "on" : "ghost"); }; btns.appendChild(b); }
+  $("hat").onclick = () => { state.hat = state.hat ? null : "kerstmuts"; $("hat").classList.toggle("on", !!state.hat); };
+  $("blush").onclick = () => { state.blush = !state.blush; $("blush").classList.toggle("on", state.blush); };
+  $("flip").onclick = () => { state.facing = -state.facing; };
+  $("heroKind").value = state.kind; $("heroKind").onchange = (e) => { state.kind = e.target.value; };
+  if (state.hat) $("hat").classList.add("on"); if (state.blush) $("blush").classList.add("on");
+  function drawHero(t) {
+    const g = fit(hero), w = hero._w, h = hero._h;
+    // little stage: ground band
+    g.fillStyle = "#eef4ff"; g.fillRect(0, h - 34, w, 34); g.fillStyle = "#fbfdff"; g.fillRect(0, h - 34, w, 6);
+    g.save(); g.translate(w * .5, h - 34);
+    A.animal(g, state.kind, state.anim, t, { scale: 2.2, facing: state.facing, hat: state.hat, blush: state.blush });
+    g.restore();
+    label(g, A.NAMES[state.kind] + " · " + state.anim, w / 2, 20, 14);
+    // strip: 8 frames of the current anim across one cycle (0.46 s for run, 1.2 s otherwise)
+    const s = $("strip"), gs = fit(s), sw = s._w, sh = s._h, per = state.anim === "run" ? .46 : 1.2;
+    gs.fillStyle = "rgba(255,255,255,.1)"; gs.fillRect(0, sh - 14, sw, 2);
+    for (let i = 0; i < 8; i++) {
+      gs.save(); gs.translate(sw / 16 + i * sw / 8, sh - 14);
+      A.animal(gs, state.kind, state.anim, per * i / 8, { scale: .58, facing: state.facing, hat: state.hat, blush: state.blush });
+      gs.restore();
+    }
+  }
+
+  // --- sprite sheet: columns = animals, rows = anims
+  const sheet = $("sheet");
+  function drawSheet(t) {
+    const g = fit(sheet), w = sheet._w, h = sheet._h, cw = w / 4, rh = h / 8;
+    g.fillStyle = "rgba(255,255,255,.04)"; for (let r = 0; r < 8; r += 2) g.fillRect(0, r * rh, w, rh);
+    for (let c = 0; c < 4; c++) label(g, A.NAMES[A.ANIMALS[c]], cw * (c + .5), 14, 12);
+    for (let r = 0; r < 8; r++) {
+      const anim = A.ANIMS[r];
+      g.save(); g.translate(0, r * rh + rh - 10);
+      label(g, anim, 26, -rh + 24, 10);
+      for (let c = 0; c < 4; c++) {
+        g.save(); g.translate(cw * (c + .5), 0);
+        g.fillStyle = "rgba(255,255,255,.12)"; g.fillRect(-cw * .4, 0, cw * .8, 2);
+        A.animal(g, A.ANIMALS[c], anim, t + c * .37 + r * 1.1, { scale: .78, hat: state.hat, blush: state.blush, facing: state.facing });
+        g.restore();
+      }
+      g.restore();
+    }
+  }
+
+  // --- sprites grid
+  const spr = $("sprites");
+  const grid = [
+    ["tree1", "tree2", "tree3"], ["house", "snowman", "signpost"], ["log", "icicles", "pinecone"], ["gift", "candyCane", "star"],
+    ["bell", "bauble", "snowdrift"], ["moon", "sleigh", null], ["groundTile", "pondTile", "gingerGroundTile"], ["giantTree", null, null]
+  ];
+  function drawSprites(t) {
+    const g = fit(spr), w = spr._w, cw = w / 3;
+    const rowH = [170, 160, 90, 80, 80, 130, 90, 190];
+    let y = 0;
+    grid.forEach((row, r) => {
+      const rh = rowH[r];
+      row.forEach((name, c) => {
+        if (!name) return;
+        const s = A.sizes[name], x = cw * (c + .5), fitScale = Math.min((cw - 16) / s.w, (rh - 28) / s.h, 1.2);
+        g.save(); g.translate(x, y + 6);
+        if (s.anchor === "base") g.translate(0, (rh - 24) * .5 + s.h * fitScale * .5);
+        else if (s.anchor === "center") g.translate(0, (rh - 24) * .5);
+        else g.translate(-s.w * fitScale / 2, (rh - 24) * .5 - s.h * fitScale / 2);
+        if (name === "giantTree") { g.translate(0, 0); }
+        A.sprite(g, name, t, { scale: fitScale, variant: c + r, theme: name === "gingerGroundTile" ? "peperkoek" : "nacht", wink: name === "moon" && Math.floor(t) % 4 === 0 });
+        g.restore();
+        label(g, name + " " + s.w + "×" + s.h, x, y + rh - 4, 10);
+      });
+      y += rowH[r];
+    });
+    // the giant tree is huge: show it scaled with an extra wide cell
+    if (A.pre) { /* keep cache warm for the game */ A.pre("tree1", DPR); }
+  }
+
+  // --- background demos
+  const bgs = [...document.querySelectorAll(".bg canvas")];
+  const PAR = [0.05, 0.2, 0.45, 0.75, 0.95];
+  const scroll0 = qs.has("scroll") ? +qs.get("scroll") : 0;
+  const runners = ["hert", "konijn", "vos"];
+  function drawBg(c, t, idx) {
+    const g = fit(c), w = c._w, h = c._h, theme = c.dataset.theme, x = scroll0 + t * 220 + idx * 600;
+    A.horizon = .74;
+    for (let L = 0; L < 5; L++) A.background(g, L, x * PAR[L], w, h, t, theme);
+    // ground tiles + a frozen pond stretch, then the runner
+    const gy = A.groundY(h), tile = theme === "peperkoek" ? "gingerGroundTile" : "groundTile";
+    g.fillStyle = theme === "peperkoek" ? "#8a4f27" : "#a9bbe8"; g.fillRect(0, gy + 78, w, h - gy - 78); // deep ground under the tiles
+    const start = Math.floor(x / 128) * 128;
+    for (let tx = start - 128; tx < x + w + 128; tx += 128) {
+      const i = Math.round(tx / 128), pond = ((i % 11) === 7 || (i % 11) === 8) && theme !== "peperkoek";
+      g.save(); g.translate(tx - x, gy);
+      if (pond) { g.fillStyle = "#6f9fd6"; g.fillRect(0, 24, 128, h - gy - 24); g.translate(0, 24); } // frozen stream sits lower, water underneath
+      A.sprite(g, pond ? "pondTile" : tile, t, { theme });
+      g.restore();
+    }
+    // some world sprites on the ground
+    const put = (name, wx, dy, o) => { g.save(); g.translate(wx - x, gy + (dy || 0)); A.sprite(g, name, t, o); g.restore(); };
+    for (let i = Math.floor(x / 500); i < (x + w) / 500 + 1; i++) {
+      const wx = i * 500 + 120, k = A.hash(i, 99);
+      if (k < .3) put("log", wx); else if (k < .5) put("snowman", wx); else if (k < .7) put("signpost", wx); else put("gift", wx, -70);
+      put("star", wx + 160, -90 - 20 * Math.sin(t * 2 + i), { variant: i }); put("star", wx + 200, -110 - 20 * Math.sin(t * 2 + i + .5), { variant: i + 1 }); put("star", wx + 240, -90 - 20 * Math.sin(t * 2 + i + 1), { variant: i + 2 });
+      if (k > .5) put("bell", wx + 300, -80, { variant: i }); else put("candyCane", wx + 300, -80);
+      if (A.hash(i, 98) > .6) put("icicles", wx + 380, -150);
+    }
+    g.save(); g.translate(w * .32, gy);
+    A.animal(g, runners[idx], "run", t, { scale: 1, hat: state.hat, blush: state.blush });
+    g.restore();
+    // ghost friend
+    g.save(); g.translate(w * .32 - 90, gy);
+    A.animal(g, runners[(idx + 1) % 3], "run", t + .2, { scale: 1, alpha: .55 });
+    g.restore();
+    label(g, theme, w / 2, 22, 14);
+  }
+
+  // --- loop
+  let n = 0, tf = performance.now();
+  function loop() {
+    const t = now();
+    try {
+      drawHero(t); drawSheet(t); drawSprites(t); bgs.forEach((c, i) => drawBg(c, t, i));
+    } catch (e) { errors.push(String(e && e.stack || e)); console.error(e); }
+    n++; const pn = performance.now(); if (pn - tf > 1000) { $("fps").textContent = Math.round(n * 1000 / (pn - tf)) + " fps"; n = 0; tf = pn; }
+    if (frozen == null) requestAnimationFrame(loop);
+  }
+  loop();
+  window.demo = { state, errors, now, redraw: loop };
+</script>
+</body>
+</html>

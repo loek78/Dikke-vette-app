@@ -6,12 +6,16 @@
   const M = typeof DVMini !== "undefined" ? DVMini : require("./core.js");
 
   // Per moeilijkheid: tempo, maten, aanloop van de ring (ms) en vensters (ms, ±).
+  // bad = buitenrand: een tik net naast "goed" telt als MIS voor díe noot (geen extra luchtpuf-straf).
   const CFG = {
-    1: { bpm: 80, bars: 6, approach: 1500, perfect: 75, good: 160, name: "Rustig" },
-    2: { bpm: 100, bars: 8, approach: 1150, perfect: 60, good: 130, name: "Stevig" },
-    3: { bpm: 120, bars: 10, approach: 950, perfect: 50, good: 110, name: "Heet" },
+    1: { bpm: 80, bars: 6, approach: 1500, perfect: 75, good: 160, bad: 250, name: "Rustig" },
+    2: { bpm: 100, bars: 8, approach: 1150, perfect: 60, good: 130, bad: 210, name: "Stevig" },
+    3: { bpm: 120, bars: 10, approach: 950, perfect: 50, good: 110, bad: 175, name: "Heet" },
   };
   const LEAD = 2; // tellen klik vooraf
+  // Een tik komt altijd wat later binnen dan je hem bedoelde (beeld loopt ~1 frame achter, touchscreen ~20–40 ms).
+  // Die vaste vertraging trekken we eraf, anders voelt "precies op tijd" structureel als "laat".
+  const INPUT_LAG = 30;
   const BARS = {
     1: [[0, 1, 2, 3], [0, 2], [0, 1, 2], [0, 2, 3], [0, 1, 3]],
     2: [[0, 1, 2, 3], [0, 1, 1.5, 2, 3], [0, 2, 2.5, 3], [0, 1, 2], [0, 0.5, 1, 2, 3]],
@@ -43,6 +47,21 @@
     const fin = LEAD + c.bars * 4; // grote slotpuf op de één
     notes.push({ t: Math.round(fin * beatMs), beat: fin, off: false, big: true });
     return notes;
+  }
+
+  // Welke noot hoort bij een tik op songtijd t? De dichtstbijzijnde open noot binnen het buitenvenster
+  // (zodat snelle achtsten elkaar niet "stelen"). → { i, dt, grade: "perfect"|"good"|"miss" } of null (= luchtpuf).
+  function classify(notes, from, t, c) {
+    let pick = -1, pd = Infinity;
+    for (let i = from; i < notes.length; i++) {
+      const n = notes[i];
+      if (n.done) continue;
+      const dt = t - n.t;
+      if (dt < -c.bad) break;
+      if (Math.abs(dt) <= c.bad && Math.abs(dt) < pd) { pick = i; pd = Math.abs(dt); }
+    }
+    if (pick < 0) return null;
+    return { i: pick, dt: t - notes[pick].t, grade: pd <= c.perfect ? "perfect" : pd <= c.good ? "good" : "miss" };
   }
 
   // ---------- Scoren ----------
@@ -130,12 +149,20 @@
 .bb-howto{gap:16px;background:radial-gradient(90% 55% at 50% 38%,rgba(255,106,26,.22),transparent 70%)}
 .bb-orb{width:120px;height:120px;border-radius:50%;position:relative;flex:none;
   background:radial-gradient(circle at 46% 40%,#fff3d0 0,#ffc247 22%,#ff6a1a 52%,#a8260c 78%,#2a0a04 100%);
-  margin:26px 0 30px;box-shadow:0 0 40px 8px rgba(255,106,26,.55),0 0 110px 30px rgba(232,64,28,.25);animation:bb-breathe 1.2s ease-in-out infinite}
-.bb-orb::before,.bb-orb::after{content:"";position:absolute;inset:-18px;border-radius:50%;border:3px solid var(--flame,#ffc247);
+  margin:40px 0 44px;box-shadow:0 0 40px 8px rgba(255,106,26,.55),0 0 110px 30px rgba(232,64,28,.25);animation:bb-breathe 1.2s ease-in-out infinite}
+.bb-orb::before,.bb-orb::after{content:"";position:absolute;inset:-18px;border-radius:50%;border:4px solid var(--flame,#ffc247);
   opacity:0;animation:bb-shrink 1.2s linear infinite}
 .bb-orb::after{border-color:var(--blue,#5aa9ff);animation-delay:.6s}
-@keyframes bb-breathe{0%,100%{transform:scale(1)}12%{transform:scale(1.08)}}
-@keyframes bb-shrink{0%{transform:scale(1.45);opacity:0}30%{opacity:.8}100%{transform:scale(1);opacity:0}}
+.bb-orb.solo::after{display:none}
+.bb-tgt{position:absolute;inset:-18px;border-radius:50%;border:2px solid rgba(255,243,208,.75);box-shadow:0 0 14px rgba(255,194,71,.5);
+  animation:bb-tgt 1.2s linear infinite}
+.bb-tik{position:absolute;left:100%;top:50%;margin:-10px 0 0 30px;font:900 20px/1 "Unbounded",system-ui,sans-serif;color:#fff3d0;
+  text-shadow:0 0 14px rgba(255,194,71,.9);opacity:0;animation:bb-tik 1.2s linear infinite}
+@keyframes bb-breathe{0%,78%,100%{transform:scale(1)}84%{transform:scale(1.1)}}
+@keyframes bb-shrink{0%{transform:scale(1.45);opacity:0}15%{opacity:1}80%{transform:scale(1);opacity:1}92%{transform:scale(.97);opacity:0}100%{opacity:0}}
+@keyframes bb-tgt{0%,76%,100%{transform:scale(1);border-color:rgba(255,243,208,.6)}82%{transform:scale(1.06);border-color:#fff}}
+@keyframes bb-tik{0%,76%{opacity:0;transform:scale(.7)}82%{opacity:1;transform:scale(1.15)}100%{opacity:0;transform:scale(1)}}
+
 .bb-kicker{font:800 12px/1 system-ui,sans-serif;letter-spacing:.22em;text-transform:uppercase;color:var(--ember,#ff6a1a)}
 .bb-title{font-size:clamp(34px,11vw,48px);line-height:1;margin:0;
   background:linear-gradient(180deg,#fff3d0,var(--flame,#ffc247) 45%,var(--ember,#ff6a1a));-webkit-background-clip:text;background-clip:text;color:transparent;
@@ -167,10 +194,13 @@
   text-transform:uppercase;color:var(--ash,#b8a99a);pointer-events:none;transition:opacity .6s;z-index:2}
 .bb-pop{position:absolute;left:50%;transform:translate(-50%,-50%);pointer-events:none;white-space:nowrap;z-index:3;
   font:900 30px/1 "Unbounded",system-ui,sans-serif;animation:bb-pop .7s cubic-bezier(.2,.9,.3,1.2) forwards}
-.bb-pop.p{color:var(--flame,#ffc247);text-shadow:0 0 18px rgba(255,194,71,.8),0 2px 0 #7a2a06}
-.bb-pop.g{color:var(--ember,#ff6a1a);font-size:24px;text-shadow:0 0 14px rgba(255,106,26,.6)}
-.bb-pop.m{color:var(--ash,#b8a99a);font-size:22px;text-shadow:0 0 12px rgba(90,169,255,.45)}
+.bb-pop{text-shadow:0 0 3px rgba(20,6,2,.95),0 2px 0 #4a1404,0 0 18px rgba(255,106,26,.6)}
+.bb-pop.p{color:var(--flame,#ffc247);text-shadow:0 0 3px rgba(20,6,2,.95),0 2px 0 #7a2a06,0 0 18px rgba(255,194,71,.8)}
+.bb-pop.g{color:var(--glow,#ffe7b8);font-size:24px}
+.bb-pop.m{color:#d9e9ff;font-size:24px;text-shadow:0 0 3px rgba(5,10,20,.95),0 2px 0 #10243d,0 0 16px rgba(90,169,255,.6)}
 .bb-pop.s{color:var(--ash,#b8a99a);font-size:15px;font-weight:700;opacity:.8}
+.bb-pop.big{font-size:44px;color:#fff3d0;text-shadow:0 0 26px rgba(255,194,71,.95),0 0 60px rgba(255,106,26,.8),0 3px 0 #7a2a06;animation-duration:1.1s}
+.bb-pop small{display:block;margin-top:6px;font:800 13px/1 system-ui,sans-serif;letter-spacing:.14em;text-transform:uppercase;color:#fff3d0}
 .bb-pop.c{color:var(--glow,#ffe7b8);font-size:15px;font-family:system-ui,sans-serif;font-weight:700;letter-spacing:.02em;
   background:rgba(23,16,11,.75);border:1px solid rgba(255,194,71,.35);padding:8px 13px;border-radius:14px;animation-duration:1.8s}
 @keyframes bb-pop{0%{transform:translate(-50%,-30%) scale(.6);opacity:0}18%{transform:translate(-50%,-50%) scale(1.12);opacity:1}
@@ -199,7 +229,11 @@
   padding:10px 16px;border-radius:99px;background:rgba(23,16,11,.7);border:1px solid rgba(255,231,184,.12)}
 .bb-wait i{width:10px;height:10px;border-radius:50%;background:var(--ember,#ff6a1a);box-shadow:0 0 12px var(--ember,#ff6a1a);
   animation:bb-breathe 1s ease-in-out infinite}
-@media (prefers-reduced-motion:reduce){.bb-orb,.bb-orb::before,.bb-orb::after,.bb-wait i{animation:none}.bb-orb::before{opacity:.5;transform:scale(1.3)}}
+@media (prefers-reduced-motion:reduce){.bb-orb,.bb-orb::after,.bb-tgt,.bb-wait i{animation:none}.bb-orb::after{opacity:0}
+  .bb-orb::before{animation-name:bb-fadein}.bb-tik{animation-name:bb-fadein}.bb-pop{animation-name:bb-fadeout}
+  .bb .mini-countdown.pop,.bb-res{animation:none}}
+@keyframes bb-fadein{0%,70%{opacity:0}85%{opacity:1}100%{opacity:0}}
+@keyframes bb-fadeout{0%{opacity:0;transform:translate(-50%,-50%)}15%,70%{opacity:1;transform:translate(-50%,-50%)}100%{opacity:0;transform:translate(-50%,-50%)}}
 `;
 
   function injectCss() {
@@ -217,6 +251,7 @@
     return e;
   };
 
+  const HOWTO = "Tik overal op het scherm zodra een ring de witte cirkel rond de kool raakt. Blaas in de maat en het vuur groeit.";
   const QUIPS = { 8: "Gloei: \"Ooh, dáár. Ja.\"", 16: "Gloei: \"Ik voel me tien jaar jonger!\"", 24: "Gloei: \"Niet stoppen. NIET STOPPEN.\"", 32: "Gloei: \"Jullie zijn eigenlijk best goed…\"" };
   const RANKS = [[0.9, "Blaasbalg-meester"], [0.75, "Vuurfluisteraar"], [0.55, "Prima pufje"], [0.35, "Beetje hijgerig"], [0, "Gloei is beledigd"]];
 
@@ -238,10 +273,14 @@
 
     // --- Howto ---
     const how = h("div", "bb-scr bb-howto");
-    how.appendChild(h("div", "bb-orb"));
+    // Demo: ring krimpt naar de witte doelcirkel, op het moment van raken "TIK!".
+    const orb = h("div", "bb-orb" + (d === 1 ? " solo" : ""));
+    orb.appendChild(h("div", "bb-tgt"));
+    orb.appendChild(h("div", "bb-tik", "TIK!"));
+    how.appendChild(orb);
     how.appendChild(h("div", "bb-kicker", "Blaasbalg · " + c.name + " · " + c.bpm + " bpm"));
     how.appendChild(h("h2", "bb-title bb-disp", "Blaasbalg"));
-    how.appendChild(h("p", "bb-text", "Tik precies als een ring de gloeiende kool raakt: blaas samen in de maat en het vuur groeit."));
+    how.appendChild(h("p", "bb-text", HOWTO));
     const leg = h("div", "bb-legend");
     const chip = (cls, txt, bold) => { const x = h("span", "bb-chip"); x.appendChild(h("i", cls)); x.appendChild(document.createTextNode(txt + " ")); if (bold) x.appendChild(h("b", null, bold)); leg.appendChild(x); };
     chip("", "op de tel", null);
@@ -286,6 +325,9 @@
       const cy = winTop + (winBot - winTop) * 0.62;
       L = { R, cx: W / 2, cy, ringR: R * 1.35, maxR: Math.min(W * 0.6, H * 0.42), winTop, winBot,
         winL: W * 0.05, winR: W * 0.95, belTop: H * 0.79, belBot: H * 0.95 };
+      L.speed = (L.maxR - L.ringR) / c.approach; // px per ms: ringen bewegen op tijd, niet per frame
+      buildSprites();
+      if (phase === "result" && !raf && !dead) drawScene(performance.now(), 0); // canvas is leeg na resize
     }
     if (typeof ResizeObserver === "function") { ro = new ResizeObserver(() => layout()); ro.observe(play); }
 
@@ -299,6 +341,37 @@
       return [Math.cos(a) * r1, Math.sin(a) * r1, Math.cos((a + b) / 2) * 0.55 + (drng() - 0.5) * 0.3, Math.sin((a + b) / 2) * 0.55 + (drng() - 0.5) * 0.3, Math.cos(b) * 0.88, Math.sin(b) * 0.88];
     });
 
+    // Vooraf getekende sprites (gloeibolletje + houtskooltextuur): scheelt ~40 gradients per frame op trage telefoons.
+    const sprite = (px, draw) => {
+      const k = document.createElement("canvas");
+      k.width = k.height = Math.max(2, Math.ceil(px));
+      draw(k.getContext("2d"), k.width);
+      return k;
+    };
+    let glowSpr = null, blotSpr = null, veinSpr = null;
+    function buildSprites() {
+      if (W < 50) return;
+      glowSpr = sprite(64, (x, s) => {
+        const gr = x.createRadialGradient(s / 2, s / 2, 0, s / 2, s / 2, s / 2);
+        gr.addColorStop(0, "rgba(255,170,60,1)"); gr.addColorStop(0.6, "rgba(232,64,28,.6)"); gr.addColorStop(1, "rgba(60,10,4,0)");
+        x.fillStyle = gr; x.fillRect(0, 0, s, s);
+      });
+      const pr = L.R * 1.1 * dpr; // ruimte voor de puls
+      blotSpr = sprite(pr * 2, (x, s) => {
+        x.translate(s / 2, s / 2);
+        blots.forEach((k) => {
+          const bg = x.createRadialGradient(k.x * pr, k.y * pr, 0, k.x * pr, k.y * pr, k.s * pr);
+          bg.addColorStop(0, "rgba(70,14,4,1)"); bg.addColorStop(1, "rgba(70,14,4,0)");
+          x.fillStyle = bg; x.beginPath(); x.arc(k.x * pr, k.y * pr, k.s * pr, 0, 6.283); x.fill();
+        });
+      });
+      veinSpr = sprite(pr * 2, (x, s) => {
+        x.translate(s / 2, s / 2); x.lineCap = "round"; x.strokeStyle = "rgb(255,226,150)"; x.lineWidth = Math.max(1, L.R * 0.035 * dpr);
+        veins.forEach((v) => { x.beginPath(); x.moveTo(v[0] * pr, v[1] * pr); x.quadraticCurveTo(v[2] * pr, v[3] * pr, v[4] * pr, v[5] * pr); x.stroke(); });
+      });
+      L.sprR = L.R * 1.1;
+    }
+
     const parts = [];
     const spark = (x, y, n, spd, kind) => {
       for (let i = 0; i < n && parts.length < 260; i++) {
@@ -310,13 +383,15 @@
     };
 
     // --- Spelstatus ---
-    let t0 = 0, lastT = 0, lastBeat = -1, next = 0;
+    let t0 = 0, lastBeat = -1, sched = -1, next = 0, pausedT = 0, runId = 0, endAt = 0;
+    const lastNote = notes[notes.length - 1];
     let hits = 0, perfect = 0, misses = 0, stray = 0, combo = 0, best = 0;
     let heat = 0.45, pulse = 0, flare = 0, squish = 0, shake = 0, flash = 0, lastFrame = 0;
     const rings = []; // uitdijende raak-ringen
 
-    function popup(text, cls, dy) {
+    function popup(text, cls, dy, sub) {
       const p = h("div", "bb-pop " + cls, text);
+      if (sub) p.appendChild(h("small", null, sub));
       p.style.top = Math.round(L.cy - L.R * (cls === "c" ? 3.9 : 2.3) + (dy || 0)) + "px";
       p.addEventListener("animationend", () => p.remove());
       play.appendChild(p);
@@ -335,7 +410,7 @@
       const a = Math.abs(dt);
       if (a <= c.perfect) {
         perfect++; hits++; combo++;
-        popup("PERFECT", "p");
+        popup(note.big ? "PUUUF!" : "PERFECT", note.big ? "p big" : "p");
         beep(988 + Math.min(combo, 24) * 18, 0.08, "triangle", 0.1);
         heat = Math.min(1, heat + 0.1); flare = 1;
         spark(L.cx, L.cy - L.R * 0.6, note.big ? 46 : 18, 260, "spark");
@@ -343,7 +418,7 @@
         buzz(12);
       } else {
         hits++; combo++;
-        popup(dt < 0 ? "GOED · vroeg" : "GOED · laat", "g");
+        popup(note.big ? "PUF!" : "GOED", note.big ? "g big" : "g", 0, dt < 0 ? "vroeg" : "laat");
         beep(740, 0.06, "triangle", 0.08);
         heat = Math.min(1, heat + 0.05); flare = Math.max(flare, 0.55);
         spark(L.cx, L.cy - L.R * 0.6, note.big ? 30 : 9, 190, "spark");
@@ -351,15 +426,22 @@
         buzz(8);
       }
       best = Math.max(best, combo);
-      if (QUIPS[combo]) later(() => popup(QUIPS[combo], "c"), 120);
+      if (note.big) { // slotpuf: alles uit de kast
+        flash = 1; flare = 1; heat = Math.min(1, heat + 0.2);
+        rings.push({ r: L.ringR, life: 0, col: "255,243,208", big: true });
+        beep(523, 0.18, "triangle", 0.09); beep(784, 0.22, "triangle", 0.08, 0.06); beep(1047, 0.3, "triangle", 0.08, 0.12);
+        buzz([20, 40, 60]);
+      }
+      if (QUIPS[combo]) { flash = Math.max(flash, 0.5); later(() => popup(QUIPS[combo], "c"), 120); }
       if (hits >= 3) hint.style.opacity = "0";
       updHud();
     }
 
-    function miss(note) {
+    // dt gezet = tik net naast het venster (te vroeg/te laat), anders voorbijgelaten noot.
+    function miss(note, dt) {
       note.done = true;
       misses++; combo = 0;
-      popup("MIS", "m");
+      popup("MIS", "m", 0, dt === undefined ? null : dt < 0 ? "te vroeg" : "te laat");
       beep(150, 0.14, "sawtooth", 0.05);
       buzz(35);
       heat = Math.max(0.12, heat - 0.14); shake = reduced ? 0 : 1;
@@ -367,29 +449,31 @@
       updHud();
     }
 
-    function tap() {
+    function tap(at) {
       if (phase !== "play") return;
-      const t = performance.now() - t0;
+      const t = at - t0 - INPUT_LAG;
       squish = 1;
       spark(L.cx, L.belTop - 4, 6, 520, "air");
-      // eerste nog-niet-beoordeelde noot binnen het goed-venster
-      for (let i = next; i < notes.length; i++) {
-        const n = notes[i];
-        if (n.done) continue;
-        const dt = t - n.t;
-        if (dt < -c.good) break;
-        if (Math.abs(dt) <= c.good) { judge(n, dt); return; }
-      }
+      const hit = classify(notes, next, t, c);
+      if (hit) { if (hit.grade === "miss") miss(notes[hit.i], hit.dt); else judge(notes[hit.i], hit.dt); return; }
       stray++; combo = 0;
       popup("pfff…", "s");
       beep(260, 0.04, "square", 0.025);
       updHud();
     }
 
-    const onDown = (e) => { if (e.button > 0) return; e.preventDefault(); tap(); };
-    const onKey = (e) => { if ((e.code === "Space" || e.key === "Enter") && phase === "play" && !e.repeat) { e.preventDefault(); tap(); } };
+    // Tijdstip van de tik = moment van het event (niet van de handler): een drukke main thread mag je timing niet kosten.
+    const evT = (e) => {
+      const n = performance.now(), ts = e && e.timeStamp;
+      return ts > 0 && ts <= n + 2 && n - ts < 250 ? ts : n;
+    };
+    const onDown = (e) => { if (e.button > 0) return; e.preventDefault(); tap(evT(e)); };
+    const onKey = (e) => { if ((e.code === "Space" || e.key === "Enter") && phase === "play" && !e.repeat) { e.preventDefault(); tap(evT(e)); } };
+    // Tab weg (telefoon op slot, appje): pauzeren i.p.v. alle noten als MIS te tellen; terug = aftellen + 2 tellen aanloop.
+    const onVis = () => { if (document.hidden) pause(); else if (phase === "pause") resume(); };
     play.addEventListener("pointerdown", onDown);
     document.addEventListener("keydown", onKey);
+    document.addEventListener("visibilitychange", onVis);
 
     // --- Tekenen ---
     function flameShape(cx, by, hw, fh, t, ph) {
@@ -444,7 +528,7 @@
     }
 
     function drawScene(now, t) {
-      const { R, cx, cy, ringR, maxR, winTop, winBot, winL, winR } = L;
+      const { R, cx, cy, ringR, winTop, winBot, winL, winR } = L;
       const ts = now / 1000;
       g.setTransform(dpr, 0, 0, dpr, 0, 0);
       g.clearRect(0, 0, W, H);
@@ -464,13 +548,11 @@
       // Bed van kooltjes onderin de ruit
       g.save();
       roundRect(winL, winTop, winR - winL, winBot - winTop, 26); g.clip();
-      coals.forEach((k) => {
+      if (glowSpr) coals.forEach((k) => {
         const x = winL + 10 + k.x * (winR - winL - 20), y = winBot - 8 - k.y * (winBot - winTop) * 0.14;
-        const a = (0.35 + 0.4 * heat) * (0.6 + 0.4 * Math.sin(ts * 2.3 + k.ph));
         const rr = R * 0.32 * k.r;
-        const cg = g.createRadialGradient(x, y, 0, x, y, rr);
-        cg.addColorStop(0, "rgba(255,170,60," + a + ")"); cg.addColorStop(0.6, "rgba(232,64,28," + a * 0.6 + ")"); cg.addColorStop(1, "rgba(60,10,4,0)");
-        g.fillStyle = cg; g.beginPath(); g.arc(x, y, rr, 0, 6.283); g.fill();
+        g.globalAlpha = Math.min(1, (0.35 + 0.4 * heat) * (0.6 + 0.4 * Math.sin(ts * 2.3 + k.ph)));
+        g.drawImage(glowSpr, x - rr, y - rr, rr * 2, rr * 2);
       });
       g.restore();
 
@@ -494,16 +576,16 @@
       eg.addColorStop(0.92, "#9a220b");
       eg.addColorStop(1, "#3a0e05");
       g.fillStyle = eg; g.beginPath(); g.arc(cx, cy, pr, 0, 6.283); g.fill();
-      g.save(); g.beginPath(); g.arc(cx, cy, pr, 0, 6.283); g.clip(); g.translate(cx, cy);
-      blots.forEach((k) => {
-        const bg = g.createRadialGradient(k.x * pr, k.y * pr, 0, k.x * pr, k.y * pr, k.s * pr);
-        bg.addColorStop(0, "rgba(70,14,4," + (0.6 - hot * 0.3) + ")"); bg.addColorStop(1, "rgba(70,14,4,0)");
-        g.fillStyle = bg; g.beginPath(); g.arc(k.x * pr, k.y * pr, k.s * pr, 0, 6.283); g.fill();
-      });
-      g.globalCompositeOperation = "lighter"; g.lineCap = "round";
-      g.strokeStyle = "rgba(255,226,150," + (0.12 + hot * 0.35 + pulse * 0.15) + ")"; g.lineWidth = Math.max(1, R * 0.035);
-      veins.forEach((v) => { g.beginPath(); g.moveTo(v[0] * pr, v[1] * pr); g.quadraticCurveTo(v[2] * pr, v[3] * pr, v[4] * pr, v[5] * pr); g.stroke(); });
-      g.restore();
+      if (blotSpr) {
+        const sr = L.sprR * pr / R;
+        g.save(); g.beginPath(); g.arc(cx, cy, pr, 0, 6.283); g.clip();
+        g.globalAlpha = 0.6 - hot * 0.3;
+        g.drawImage(blotSpr, cx - sr, cy - sr, sr * 2, sr * 2);
+        g.globalCompositeOperation = "lighter";
+        g.globalAlpha = Math.min(1, 0.12 + hot * 0.35 + pulse * 0.15);
+        g.drawImage(veinSpr, cx - sr, cy - sr, sr * 2, sr * 2);
+        g.restore();
+      }
 
       // Rooster vóór de kool (zoals de kachel)
       const gy = cy + R * 0.95;
@@ -518,31 +600,37 @@
       g.beginPath(); g.moveTo(cx - R * 2, gy - R * 0.47); g.quadraticCurveTo(cx, gy + R * 0.13, cx + R * 2, gy - R * 0.47); g.stroke();
       g.restore();
 
-      // Doelring: pulseert op elke tel
-      g.lineWidth = 3 + pulse * 3;
-      g.strokeStyle = "rgba(255,231,184," + (0.3 + pulse * 0.6) + ")";
-      g.shadowColor = "rgba(255,194,71,.9)"; g.shadowBlur = 10 + pulse * 18;
+      // Raakzone: de band is precies het "goed"-venster (ringen bewegen met vaste px/ms), de doelring pulseert op de tel.
+      const band = L.speed * c.good;
+      g.lineWidth = band * 2;
+      g.strokeStyle = "rgba(255,194,71," + (0.07 + pulse * 0.07) + ")";
+      g.beginPath(); g.arc(cx, cy, ringR, 0, 6.283); g.stroke();
+      g.lineWidth = 9 + pulse * 6;
+      g.strokeStyle = "rgba(255,194,71," + (0.12 + pulse * 0.25) + ")";
       g.beginPath(); g.arc(cx, cy, ringR + pulse * 3, 0, 6.283); g.stroke();
-      g.shadowBlur = 0;
+      g.lineWidth = 2.5 + pulse * 2.5;
+      g.strokeStyle = "rgba(255,243,208," + (0.55 + pulse * 0.45) + ")";
+      g.beginPath(); g.arc(cx, cy, ringR + pulse * 3, 0, 6.283); g.stroke();
 
-      // Aanrollende ringen
-      if (phase === "play") {
+      // Aanrollende ringen: straal = doel + snelheid × resterende tijd (ook ná het doel, zodat "te laat" zichtbaar is)
+      if (phase === "play" || phase === "pause" || phase === "resume") {
         for (let i = next; i < notes.length; i++) {
           const n = notes[i];
           const dt = n.t - t;
           if (dt > c.approach) break;
-          if (n.done || dt < -c.good) continue;
+          if (n.done || dt < -c.bad) continue;
           const k = Math.max(0, dt / c.approach);
-          const r = ringR + (maxR - ringR) * k;
+          const r = Math.max(R * 0.5, ringR + L.speed * dt);
           const col = n.off ? "90,169,255" : "255,194,71";
           const near = Math.abs(dt) <= c.perfect;
-          const a = Math.min(1, 0.2 + (1 - k) * 0.95);
-          g.lineWidth = (n.big ? 7 : 4) + (1 - k) * 4;
+          const a = Math.min(1, 0.2 + (1 - k) * 0.95) * (dt < 0 ? Math.max(0, 1 + dt / c.bad) : 1);
+          const lw = (n.big ? 7 : 4) + (1 - k) * 4;
+          g.lineWidth = lw * 2.6; g.strokeStyle = "rgba(" + col + "," + a * 0.22 + ")"; // gloed zonder shadowBlur
+          g.beginPath(); g.arc(cx, cy, r, 0, 6.283); g.stroke();
+          g.lineWidth = lw;
           g.strokeStyle = near ? "rgba(255,243,208," + a + ")" : "rgba(" + col + "," + a + ")";
-          g.shadowColor = "rgba(" + col + ",.9)"; g.shadowBlur = 8 + (1 - k) * 14;
-          g.beginPath(); g.arc(cx, cy, Math.max(ringR * 0.8, r), 0, 6.283); g.stroke();
-          if (n.big) { g.lineWidth = 2; g.beginPath(); g.arc(cx, cy, Math.max(ringR * 0.8, r) + 10, 0, 6.283); g.stroke(); }
-          g.shadowBlur = 0;
+          g.stroke();
+          if (n.big) { g.lineWidth = 2.5; g.beginPath(); g.arc(cx, cy, r + 11, 0, 6.283); g.stroke(); }
         }
       }
 
@@ -551,7 +639,7 @@
         const q = rings[i];
         const a = 1 - q.life;
         g.lineWidth = 6 * a; g.strokeStyle = "rgba(" + q.col + "," + a + ")";
-        g.beginPath(); g.arc(cx, cy, q.r + q.life * R * 1.6, 0, 6.283); g.stroke();
+        g.beginPath(); g.arc(cx, cy, q.r + q.life * R * (q.big ? 4 : 1.6), 0, 6.283); g.stroke();
       }
 
       // Deeltjes
@@ -639,23 +727,24 @@
       if (!L || !W) layout();
       const dt = Math.min(0.05, (now - (lastFrame || now)) / 1000);
       lastFrame = now;
-      const t = now - t0;
+      const t = phase === "play" ? now - t0 : pausedT;
       if (phase === "play") {
-        // klikspoor: elke tel, accent op de één
-        const b = Math.floor(t / beatMs);
-        if (b > lastBeat && t >= 0) {
-          lastBeat = b;
-          if (b <= notes[notes.length - 1].beat) {
-            beep(b % 4 === LEAD % 4 ? 1320 : 880, 0.025, "square", b % 4 === LEAD % 4 ? 0.05 : 0.03);
-            pulse = 1;
-          }
+        // klikspoor: vooruit ingepland op de audioklok (via `when`), zodat de tik niet met de framerate jittert
+        const pt = performance.now() - t0;
+        while ((sched + 1) * beatMs - pt <= 120 && sched + 1 <= lastNote.beat) {
+          sched++;
+          const bt = sched * beatMs;
+          if (bt - pt > -40) beep(sched % 4 === LEAD % 4 ? 1320 : 880, 0.025, "square", sched % 4 === LEAD % 4 ? 0.05 : 0.03, Math.max(0, (bt - pt) / 1000));
         }
-        while (next < notes.length && (notes[next].done || t - notes[next].t > c.good)) {
+        // beeld: de doelring pulseert op de tel
+        const b = Math.floor(t / beatMs);
+        if (b > lastBeat && t >= 0) { lastBeat = b; if (b <= lastNote.beat) pulse = 1; }
+        while (next < notes.length && (notes[next].done || t - notes[next].t > c.bad)) {
           if (!notes[next].done) miss(notes[next]);
           next++;
         }
-        barFill.style.width = Math.min(100, (t / notes[notes.length - 1].t) * 100) + "%";
-        if (next >= notes.length && t > notes[notes.length - 1].t + c.good + 650) finish();
+        barFill.style.width = Math.min(100, (t / lastNote.t) * 100) + "%";
+        if (next >= notes.length && t > lastNote.t + c.bad + 600) finish();
       }
       // animaties uitdempen
       pulse *= Math.pow(0.02, dt); flare *= Math.pow(0.08, dt); squish *= Math.pow(0.004, dt);
@@ -666,11 +755,39 @@
       for (let i = parts.length - 1; i >= 0; i--) {
         const p = parts[i];
         p.life += dt; p.x += p.vx * dt; p.y += p.vy * dt;
-        if (p.kind === "spark") { p.vy += 90 * dt; p.vx *= 0.98; } else if (p.kind === "smoke") { p.vy -= 20 * dt; }
+        if (p.kind === "spark") { p.vy += 90 * dt; p.vx *= Math.pow(0.3, dt); } else if (p.kind === "smoke") { p.vy -= 20 * dt; }
         if (p.life >= p.max) parts.splice(i, 1);
       }
       if (phase === "result" && Math.random() < 0.08) spark(L.cx + (Math.random() - 0.5) * L.R, L.cy - L.R, 1, 120, "spark");
       drawScene(now, t);
+      // Achter de (geblurde) uitslag is een stilstaand beeld genoeg: scheelt accu tijdens het wachten.
+      if (phase === "result" && now - endAt > 1600) { cancelAnimationFrame(raf); raf = 0; }
+    }
+
+    // Spel (her)starten op songtijd `from` (ms). Tellen vóór `from` zijn al geweest.
+    function startAt(from) {
+      t0 = performance.now() - from;
+      lastBeat = sched = Math.ceil(from / beatMs) - 1;
+      phase = "play";
+      if (typeof document !== "undefined" && document.hidden) pause();
+    }
+    function pause() {
+      if (phase !== "play") return;
+      pausedT = performance.now() - t0;
+      phase = "pause";
+    }
+    function resume() {
+      if (phase !== "pause") return;
+      phase = "resume";
+      pausedT = Math.max(0, pausedT - 2 * beatMs); // twee tellen aanloop; al beoordeelde noten blijven beoordeeld
+      const id = ++runId;
+      countdown({ go: "VERDER!" }).then(() => { if (!dead && id === runId && phase === "resume") startAt(pausedT); });
+    }
+    // Aftellen via de runner; geluid stopt zodra de minigame weg is.
+    function countdown(o) {
+      const quiet = { beep: (...a) => { if (!dead) beep(...a); } };
+      const opts = Object.assign({}, o, { sfx: quiet });
+      return ctx.countdown ? ctx.countdown(play, opts) : M.countdown(play, opts);
     }
 
     function result() { return { hits, perfect, misses, stray, total: notes.length, combo: best }; }
@@ -678,6 +795,7 @@
     function finish() {
       if (phase !== "play") return;
       phase = "result";
+      endAt = performance.now();
       const r = result();
       const acc = accuracy(r) || 0;
       if (acc >= 0.75) { flash = 1; try { sfx.fanfare && sfx.fanfare(); } catch (e) { /* stil */ } }
@@ -707,16 +825,13 @@
       play.style.display = "";
       layout();
       raf = requestAnimationFrame(frame);
-      ctx.countdown(play).then(() => {
-        if (dead) return;
-        t0 = performance.now();
-        phase = "play";
-      });
+      countdown().then(() => { if (!dead && phase === "count") startAt(0); });
     });
 
     // Testhaakje (alleen voor Playwright): leesbare speltoestand, geen globale variabele.
     Object.defineProperty(root, "_bb", { value: { get phase() { return phase; }, get t() { return phase === "play" ? performance.now() - t0 : null; },
-      notes, cfg: c, result }, enumerable: false });
+      get t0() { return t0; },
+      notes, cfg: c, lag: INPUT_LAG, result }, enumerable: false });
 
     return {
       destroy() {
@@ -726,6 +841,7 @@
         if (ro) ro.disconnect();
         play.removeEventListener("pointerdown", onDown);
         document.removeEventListener("keydown", onKey);
+        document.removeEventListener("visibilitychange", onVis);
         root.remove();
       },
     };
@@ -733,8 +849,8 @@
 
   const def = {
     id: "blaasbalg", title: "Blaasbalg", icon: "🌬️", kind: "local", duration: 25,
-    howto: "Tik precies als een ring de gloeiende kool raakt: blaas samen in de maat en het vuur groeit.",
-    mount, score, bot, pattern, accuracy, CFG,
+    howto: HOWTO,
+    mount, score, bot, pattern, accuracy, classify, CFG,
   };
   M.register(def);
   if (typeof module === "object" && module.exports) module.exports = def;

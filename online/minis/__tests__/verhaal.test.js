@@ -209,7 +209,7 @@ test("view: geheimen blijven geheim (stemmen van anderen, kaarten van straks)", 
     assert.deepStrictEqual(h.flames, [3, 2, 1]);
     assert.strictEqual(h.avg, 2);
     assert.strictEqual(def.view(s, t).myVote, null);
-    assert.ok(!("swapsLeft" in def.view(s, a)) || def.view(s, a).swapsLeft === 0);
+    s.order.filter((pid) => pid !== s.tellers[s.turn]).forEach((pid) => assert.strictEqual(def.view(s, pid).swapsLeft, 0, "alleen de verteller mag ruilen"));
   }
 });
 
@@ -255,4 +255,29 @@ test("score: hogere moeilijkheid is milder, mvp = beste verteller, gelijkspel zo
   assert.strictEqual(tie.mvp, null);
   assert.ok(tie.lines.some((l) => /Gelijkspel/.test(l)));
   assert.ok(def.score({ ratings: { p0: 2.5 } }, { difficulty: 1, players }).lines.some((l) => l.includes("2,5 vlammen")));
+});
+
+test("score: enkelvoud volgt de afgeronde waarde (1,02 → \"1 vlam\", nooit \"1 vlammen\")", () => {
+  const players = PLAYERS.slice(0, 2);
+  const sc = def.score({ ratings: { p0: 1.02, p1: 1 } }, { difficulty: 1, players });
+  assert.ok(sc.lines.some((l) => l === "Loek kreeg 1 vlam."), sc.lines.join(" | "));
+  assert.ok(sc.lines.some((l) => l === "Jacques kreeg 1 vlam."));
+  assert.ok(!sc.lines.some((l) => /1 vlammen/.test(l)));
+  assert.strictEqual(sc.perPlayer.p0, "🔥 1 vlam");
+});
+
+test("view: elke update is een nieuw object, maar de geschiedenis houdt een vaste volgorde (onthulling telt op index)", () => {
+  let s = setup(4, 1, 3);
+  const views = [];
+  while (!def.result(s)) {
+    const t = s.tellers[s.turn];
+    s = def.reduce(s, t, { t: "klaar" }, ctx);
+    s.order.filter((p) => p !== t).forEach((p) => { s = def.reduce(s, p, { t: "rate", n: 2 }, ctx); });
+    views.push(def.view(s, "p0"));
+  }
+  views.forEach((vw, i) => {
+    assert.strictEqual(vw.history.length, i + 1);
+    assert.notStrictEqual(vw.history, def.view(s, "p0").history, "vers object per view");
+    assert.strictEqual(vw.history[i].teller, s.tellers[i]);
+  });
 });
