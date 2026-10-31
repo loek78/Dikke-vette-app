@@ -13,7 +13,10 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="preload" href="fonts/unbounded-latin-900-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="fonts/unbounded-latin-700-normal.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="online/online.css">
 </head>
 <body>
   <canvas id="confetti" aria-hidden="true"></canvas>
@@ -27,6 +30,13 @@
     </header>
 
     <nav class="tiles">
+      <button class="tile t-online" data-go="online" aria-label="Infiltrant — online, ieder op eigen telefoon">
+        <span class="t-online-badge">NIEUW</span>
+        <span class="t-online-art" aria-hidden="true"><span>🕵️</span></span>
+        <span class="tile-kicker">Online · ieder op eigen telefoon</span>
+        <span class="tile-title">Infiltrant</span>
+        <span class="tile-sub">Eén van jullie liegt. Wie is de infiltrant?</span>
+      </button>
       <button class="tile t-finger" data-go="finger">
         <span class="tile-emoji">☝️</span>
         <span class="tile-title">Vingerkiezer</span>
@@ -49,7 +59,7 @@
       </button>
       <button class="tile t-dice" data-go="dice">
         <span class="tile-emoji">🎲</span>
-        <span class="tile-title">Dobbelstenen</span>
+        <span class="tile-title">Dobbel&shy;stenen</span>
         <span class="tile-sub">Tik of schud je telefoon</span>
       </button>
     </nav>
@@ -150,9 +160,28 @@
     <button class="ghost" id="shakeBtn">📳 Schudden aanzetten</button>
   </section>
 
+  <!-- INFILTRANT ONLINE: start (profiel, kamer maken / meedoen) -->
+  <section class="screen ol" data-screen="online">
+    <div class="aurora" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+    <button class="back" data-back aria-label="Terug">‹</button>
+    <div class="o-home" id="olHome"></div>
+  </section>
+
+  <!-- INFILTRANT ONLINE: in de kamer (rendert per fase) -->
+  <section class="screen ol" data-screen="room">
+    <div class="aurora" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+    <div class="o-room" id="roomApp"></div>
+  </section>
+
   <div class="toast" id="toast"></div>
 
   <script src="data.js"></script>
+  <script src="vendor/mqtt.min.js"></script>
+  <script src="vendor/qrcode.js"></script>
+  <script src="online/words.js"></script>
+  <script src="online/engine.js"></script>
+  <script src="online/net.js"></script>
   <script src="app.js"></script>
+  <script src="online/ui.js"></script>
 </body>
 </html>

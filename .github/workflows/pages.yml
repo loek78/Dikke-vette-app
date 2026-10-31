@@ -18,6 +18,8 @@ concurrency:
 
 jobs:
   deploy:
+    # Tussentijdse snapshots (commitbericht begint met "WIP") gaan niet live.
+    if: ${{ github.event_name == 'workflow_dispatch' || !startsWith(github.event.head_commit.message, 'WIP') }}
     runs-on: ubuntu-latest
     environment:
       name: github-pages

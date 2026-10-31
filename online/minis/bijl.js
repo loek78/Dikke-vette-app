@@ -304,7 +304,7 @@
       L.strike = { x: cx, y: logTop + 2 };
       L.pivS = { x: cx + axeLen, y: logTop + 2 - blade };
       L.pivR = { x: cx + axeLen + 4, y: logTop + 14 - blade };
-      hint.style.top = Math.round(L.mY + 30) + "px";
+      hint.style.top = Math.round(ground + H * 0.1) + "px";
       bg = renderBg();
       logImg = renderLog(false);
       knotImg = renderLog(true);
@@ -429,7 +429,7 @@
     const parts = [], pieces = [], stack = [];
 
     const needleNow = (t) => needle(t, d);
-    const playT = () => (phase === "play" || phase === "end" ? performance.now() - t0 : 0);
+    const playT = () => (phase === "play" ? performance.now() - t0 : 0);
 
     function popup(text, cls, y) {
       const p = h("div", "bj-pop " + cls, text);
@@ -628,7 +628,7 @@
       g.fillStyle = hub; g.beginPath(); g.arc(cx, mY, 12, 0, TAU); g.fill();
       g.strokeStyle = "rgba(255,194,71,.35)"; g.lineWidth = 1; g.stroke();
       // reeks onder de naaf
-      if (phase !== "howto") {
+      if (phase !== "howto" && swings > 0) {
         g.textAlign = "center"; g.textBaseline = "alphabetic";
         g.font = "900 " + Math.round(mR * 0.26) + "px Unbounded, system-ui, sans-serif";
         g.fillStyle = streak ? "#ffc247" : "rgba(184,169,154,.5)";

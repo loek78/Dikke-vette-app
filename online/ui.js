@@ -28,7 +28,11 @@
   const E = window.DVInfiltrant;
   const N = window.DVNet;
   if (!DVA || !E || !N) { console.error("online/ui.js: DVA, DVInfiltrant of DVNet ontbreekt"); return; }
-  const { $, store, beep, fanfare, buzz, toast, confetti, hooks } = DVA;
+  const { $, store, toast, confetti, hooks } = DVA;
+  const active = () => !navigator.userActivation || navigator.userActivation.hasBeenActive;
+  const buzz = (p) => { if (active()) DVA.buzz(p); };
+  const beep = (...a) => { if (active()) DVA.beep(...a); };
+  const fanfare = () => { if (active()) DVA.fanfare(); };
   const CATS = window.DV_WORDCATS || {};
   const QS = new URLSearchParams(location.search);
   const PREVIEW = QS.get("preview");
@@ -175,7 +179,7 @@
   // =========================================================
   // Controller
   // =========================================================
-  const C = { session: null, room: null, status: "idle", pub: null, priv: null, presence: {}, outbox: [], host: null, ended: null, since: 0 };
+  const C = { session: null, room: null, status: "idle", pub: null, priv: null, presence: {}, outbox: [], host: null, ended: null, since: 0, leaving: false };
   let retxIv = null, retryT = null, unsubs = [], opening = null;
   const sentAt = new Map(); // seq → laatste verzendtijd (alleen in geheugen)
   const ectx = () => ({ rng: Math.random, now: Date.now(), words: window.DV_WORDPAIRS });
@@ -284,7 +288,7 @@
     if (Array.isArray(st.removed) && st.removed.includes(s.pid)) return end("removed");
     if (st.phase === "closed") return end("closed");
     const known = st.acks && typeof st.acks[s.pid] === "number";
-    if (known && !st.players.some((p) => p.pid === s.pid) && !C.outbox.some((e) => e.t === "join")) return end("full");
+    if (known && !C.leaving && !st.players.some((p) => p.pid === s.pid) && !C.outbox.some((e) => e.t === "join")) return end("full");
     emit();
   }
   function onPrivate(p) { C.priv = p && typeof p === "object" ? p : null; emit(); }
@@ -389,10 +393,12 @@
     if (!s) return;
     if (!C.room && opening) await Promise.race([opening.catch(() => {}), sleep(4000)]);
     if (s.isHost) return closeRoom();
+    C.leaving = true;
     act("leave");
     const t0 = Date.now();
     while (C.room && C.outbox.length && Date.now() - t0 < 2500) await sleep(100);
     await teardown(true);
+    C.leaving = false;
   }
   async function closeRoom() {
     const h0 = C.host;
@@ -491,15 +497,16 @@
   function btn(label, act0, cls, onclick, extra) {
     return h("button", Object.assign({ class: "o-btn " + (cls || "o-btn-glass"), type: "button", "data-act": act0, onclick }, extra || {}), label);
   }
+  const busyKids = new WeakMap();
   function busy(b, label) {
     if (!b) return;
     if (label) {
-      b.dataset.label = b.dataset.label || b.textContent;
+      if (!busyKids.has(b)) busyKids.set(b, [...b.childNodes]);
       b.disabled = true; b.setAttribute("aria-busy", "true"); b.classList.add("is-busy");
-      b.replaceChildren(h("span", { class: "o-spin" }), label);
+      b.replaceChildren(h("span", { class: "o-spin" }), label.trim() ? h("span", { text: label }) : "");
     } else {
       b.disabled = false; b.removeAttribute("aria-busy"); b.classList.remove("is-busy");
-      if (b.dataset.label) { b.replaceChildren(b.dataset.label); delete b.dataset.label; }
+      if (busyKids.has(b)) { b.replaceChildren(...busyKids.get(b)); busyKids.delete(b); }
     }
   }
   function dots() { return h("span", { class: "o-dots", "aria-hidden": "true" }, h("i"), h("i"), h("i")); }
@@ -562,7 +569,7 @@
   // =========================================================
   // Sheets (bottom sheet, bevestiging)
   // =========================================================
-  function sheet(build, cls) {
+  function sheet(build, cls, onClose) {
     const wrap = h("div", { class: "ol o-sheet-wrap" + (cls ? " " + cls : "") });
     const panel = h("div", { class: "o-sheet o-glass", role: "dialog", "aria-modal": "true" }, h("div", { class: "o-grab" }));
     const bg = h("div", { class: "o-sheet-bg" });
@@ -575,6 +582,7 @@
       wrap.classList.remove("open");
       document.removeEventListener("keydown", onKey);
       setTimeout(() => wrap.remove(), 340);
+      if (onClose) onClose();
     }
     bg.addEventListener("click", close);
     document.addEventListener("keydown", onKey);
@@ -583,27 +591,20 @@
     requestAnimationFrame(() => requestAnimationFrame(() => wrap.classList.add("open")));
     return close;
   }
+  // Bevestiging als sheet → Promise<boolean> (achtergrond/escape = annuleren)
   function ask({ title, text, ok = "OK", cancel = "Annuleren", danger = false, emoji }) {
     return new Promise((resolve) => {
-      let done = false;
-      const finish = (v) => { if (!done) { done = true; resolve(v); } };
-      const close = sheet((panel, close0) => {
+      let answer = false;
+      sheet((panel, close) => {
         add(panel, [
           emoji && h("div", { class: "o-ask-e", text: emoji }),
           h("h3", { class: "o-sheet-title", text: title }),
           text && h("p", { class: "o-sheet-text", text }),
           h("div", { class: "o-sheet-actions" },
-            btn(ok, "confirm", danger ? "o-btn-danger" : "o-btn-primary", () => { finish(true); close0(); }),
-            btn(cancel, "cancel", "o-btn-glass", () => { finish(false); close0(); })),
+            btn(ok, "confirm", danger ? "o-btn-danger" : "o-btn-primary", () => { answer = true; close(); }),
+            btn(cancel, "cancel", "o-btn-glass", close)),
         ]);
-      });
-      // Achtergrond/escape = annuleren
-      setTimeout(() => {
-        const wrap = document.querySelector(".o-sheet-wrap:last-of-type");
-        if (wrap) wrap.querySelector(".o-sheet-bg").addEventListener("click", () => finish(false));
-      });
-      document.addEventListener("keydown", function k(e) { if (e.key === "Escape") { finish(false); document.removeEventListener("keydown", k); } });
-      return close;
+      }, "o-ask", () => resolve(answer));
     });
   }
 
@@ -692,7 +693,7 @@
     sheet((panel) => {
       const feed = h("div", { class: "o-feed" });
       add(panel, [h("h3", { class: "o-sheet-title", text: "Alle hints" }), feed]);
-      renderFeed(feed, v.pub, true);
+      renderFeed(feed, v.pub);
       if (!v.pub.hints.length) feed.append(h("p", { class: "o-empty", text: "Nog geen hints gegeven." }));
     }, "o-sheet-tall");
   }
@@ -828,14 +829,12 @@
     const el = h("div", { class: "o-view o-center" },
       h("div", { class: "o-radar o-rise" }, h("i"), h("i"), h("i"), h("span", { text: "🕵️" })),
       h("h2", { class: "o-title o-rise", style: { "--i": 1 }, text: "Verbinden…" }), sub, stop);
-    let t = setInterval(() => {
-      const late = Date.now() - (v.since || Date.now()) > 9000 || !C.room;
-      if (!PREVIEW && late && Date.now() - startedAt > 9000) {
-        sub.textContent = C.room ? "Geen antwoord van de kamer. Misschien is die al gesloten?" : "Dit duurt lang… check je internetverbinding.";
-        stop.hidden = false;
-      }
-    }, 1000);
     const startedAt = Date.now();
+    const t = setInterval(() => {
+      if (PREVIEW || Date.now() - startedAt < 9000) return;
+      sub.textContent = C.room ? "Geen antwoord van de kamer. Misschien is die al gesloten?" : "Dit duurt lang… check je internetverbinding.";
+      stop.hidden = false;
+    }, 1000);
     return { el, update() {}, destroy() { clearInterval(t); } };
   };
 
@@ -901,7 +900,6 @@
 
     return {
       el,
-      mounted() { afterFonts(() => {}); },
       update(v) {
         const pub = v.pub;
         const link = shareUrl(pub.code, v.brokerIndex);
@@ -1122,12 +1120,10 @@
       return { el, update(v) { updReady(v); } };
     }
     let peeked = false;
-    const seen = btn([icon("check"), " Gezien ✓"], "seen", "o-btn-primary o-btn-hero o-btn-soft", () => {
+    const seen = btn(h("span", { class: "o-btn-l", text: "Gezien ✓" }), "seen", "o-btn-primary o-btn-hero o-btn-soft", () => {
       if (latest.pending.has("revealed")) return;
       sfx.lock(); buzz(15); act("revealed");
     });
-    // Label precies "Gezien ✓" (zonder dubbel vinkje-icoon)
-    seen.replaceChildren(h("span", { text: "Gezien ✓" }));
     const card = secretCard(() => { if (!peeked) { peeked = true; seen.classList.remove("o-btn-soft"); sfx.whoosh(); } });
     const hint = h("p", { class: "o-reveal-hint o-rise", style: { "--i": 2 }, text: "Laat niemand meekijken 👀" });
     const dock = h("div", { class: "o-dock" }, seen);
@@ -1157,9 +1153,9 @@
   };
 
   // ---------- Hints ----------
-  function renderFeed(box, pub, all) {
+  function renderFeed(box, pub) {
     const rounds = [...new Set(pub.hints.map((x) => x.round))].sort((a, b) => b - a);
-    const groups = (all ? rounds : rounds).map((r) => ({ r, items: pub.hints.filter((x) => x.round === r) }));
+    const groups = rounds.map((r) => ({ r, items: pub.hints.filter((x) => x.round === r) }));
     keyed(box, groups, (g) => "r" + g.r, (g) => h("div", { class: "o-feed-g" }, h("h4", { class: "o-feed-h", text: "Ronde " + g.r }), h("div", { class: "o-feed-l" })), (gel, g) => {
       const list = gel.lastChild;
       keyed(list, g.items, (x, i) => i + ":" + x.pid, (x) => {
@@ -1258,7 +1254,7 @@
           it.classList.toggle("out", out);
           it.title = p.name;
         });
-        renderFeed(feed, pub, false);
+        renderFeed(feed, pub);
         if (!pub.hints.length && !feed.querySelector(".o-empty")) feed.append(h("p", { class: "o-empty", text: "Nog geen hints. De eerste is altijd het moeilijkst…" }));
         else if (pub.hints.length) { const e0 = feed.querySelector(".o-empty"); if (e0) e0.remove(); }
       },
@@ -1307,7 +1303,7 @@
       } }, h("span", { class: "o-btn-l" }, icon("lock"), h("span", { class: "o-vs-l", text: "Stem vastleggen" })), h("span", { class: "o-btn-sub" }));
       parts.push(grid, meta, h("div", { class: "o-dock" }, submit, closeV));
     } else {
-      const target = myVote.key === vkey ? P(pub0, myVote.pid) : null;
+      const target = v0.myVote ? P(pub0, v0.myVote) : myVote.key === vkey ? P(pub0, myVote.pid) : null;
       youVoted = h("section", { class: "o-glass o-locked o-rise", style: { "--i": 2 } },
         h("div", { class: "o-locked-ic" }, icon("lock")),
         h("div", null, h("h3", { class: "o-h3", text: mode === "watch" ? watchText(v0) : "Je stem is binnen" }),
@@ -1315,6 +1311,7 @@
         target ? avatar(target, "md") : null);
       waitT = h("h3", { class: "o-wait-n" });
       waitBox = h("div", { class: "o-vwait" });
+      tally.hidden = true;
       parts.push(youVoted, h("section", { class: "o-glass o-card o-rise", style: { "--i": 3 } }, h("div", { class: "o-card-head" }, h("h3", { class: "o-h3", text: "Wie heeft er gestemd?" }), waitT), waitBox), meta,
         closeV ? h("div", { class: "o-dock" }, closeV) : h("div", { class: "o-dock" }, waitLine("Wachten op de andere stemmen…")));
     }
@@ -1338,6 +1335,7 @@
             b.setAttribute("aria-checked", sel === p.pid ? "true" : "false");
           });
           grid.classList.toggle("has-sel", !!sel);
+          grid.style.setProperty("--cols", String(targets.length <= 2 || targets.length === 4 ? 2 : 3));
           const sp = sel && P(pub, sel);
           submit.classList.toggle("is-off", !sp);
           submit.querySelector(".o-btn-sub").textContent = sp ? `Op ${sp.name} — dit is definitief` : "Tik op wie je verdenkt";
@@ -1359,10 +1357,11 @@
 
   // ---------- Drama (eliminatie-onthulling, één keer per lastVote) ----------
   const DRAMA_KEY = "dva:drama";
-  const dramaSeen = (() => { try { return new Set(JSON.parse(sessionStorage.getItem(DRAMA_KEY) || "[]")); } catch (e) { return new Set(); } })();
+  const dramaSeen = (() => { try { return new Set(PREVIEW ? [] : JSON.parse(sessionStorage.getItem(DRAMA_KEY) || "[]")); } catch (e) { return new Set(); } })();
   const dramaId = (pub) => pub.lastVote ? `${pub.code}:${pub.gameNo}:${pub.lastVote.round}:${pub.lastVote.revote ? 1 : 0}` : null;
   function markDrama(id) {
     dramaSeen.add(id);
+    if (PREVIEW) return;
     try { sessionStorage.setItem(DRAMA_KEY, JSON.stringify([...dramaSeen].slice(-30))); } catch (e) { /* */ }
   }
   function contenders(pub) {
@@ -1396,7 +1395,13 @@
       ring.style.transform = `translate(${a.offsetLeft + a.offsetWidth / 2}px, ${a.offsetTop + a.offsetHeight / 2}px)`;
       cells.forEach((c, j) => c.classList.toggle("lit", j === i));
     };
-    requestAnimationFrame(() => { move(idx); ring.classList.add("on"); });
+    requestAnimationFrame(() => {
+      ring.style.transition = "none";
+      move(idx);
+      void ring.offsetWidth;
+      ring.style.transition = "";
+      ring.classList.add("on");
+    });
     let t = 450;
     steps.forEach((dt, k) => {
       t += dt;
@@ -1495,11 +1500,15 @@
         });
         body.replaceChildren(form);
       } else {
-        body.replaceChildren(h("section", { class: "o-guessing o-rise" },
-          h("div", { class: "o-spot-stage is-red" }, h("span", { class: "o-spot-ring", style: { "--pc": "#ff3b5c" } }), avatar(gp, "xl")),
+        const feed = h("section", { class: "o-feed" });
+        renderFeed(feed, latest.pub);
+        body.replaceChildren(h("section", { class: "o-guessing o-glass o-rise" },
+          h("div", { class: "o-spot-stage is-red" }, h("span", { class: "o-spot-ring" }), h("span", { class: "o-spot-av" }, avatar(gp, "xl"))),
+          h("p", { class: "o-verdict-tag", text: "🕵️ ontmaskerd" }),
           h("h2", { class: "o-title", text: "De infiltrant mag nog één keer raden…" }),
-          h("p", { class: "o-center-text", text: `Als ${gp.name} het woord van de burgers raadt, wint de infiltrant alsnog.` }),
-          waitLine(gp.name + " denkt na")));
+          h("p", { class: "o-center-text", text: `Raadt ${gp.name} het woord van de burgers? Dan wint de infiltrant alsnog.` }),
+          waitLine(gp.name + " denkt na")),
+          h("h4", { class: "o-h4 o-rise", style: { "--i": 2 }, text: "Wat er gezegd is" }), h("div", { class: "o-rise", style: { "--i": 2 } }, feed));
       }
     }
     return {
@@ -1534,11 +1543,13 @@
     function showResults(animate) {
       const pub = latest.pub;
       const w = watchText(latest);
-      results.replaceChildren(
+      results.replaceChildren();
+      add(results, [
         h("div", { class: animate ? "o-flip-in" : "" }, verdictCard(pub, latest)),
         guessOutcome(pub),
         tallyCard(pub),
-        w && pub.lastVote.eliminated === latest.me.pid ? null : w ? h("p", { class: "o-watch-pill", text: w }) : null);
+        w && pub.lastVote.eliminated !== latest.me.pid ? h("p", { class: "o-watch-pill", text: w }) : null,
+      ]);
       dock.hidden = false;
       if (animate) {
         const inf = pub.lastVote.eliminated && pub.lastVote.role === "infiltrant";
@@ -1576,11 +1587,12 @@
     const myRole = res.roles[v0.me.pid];
     const won = myRole ? (burgers ? myRole === "burger" : myRole === "infiltrant") : null;
     const myDelta = res.delta[v0.me.pid] || 0;
-    const t1 = h("span", { class: "o-win-l", text: lines[0] }), t2 = h("span", { class: "o-win-l", text: lines[1] });
+    const lineCls = "o-win-l" + (burgers ? "" : " o-glitch");
+    const t1 = h("span", { class: lineCls, "data-text": lines[0], text: lines[0] }), t2 = h("span", { class: lineCls, "data-text": lines[1], text: lines[1] });
     const banner = h("section", { class: "o-win " + (burgers ? "is-b" : "is-i") },
       kicker(`Spel ${pub.gameNo} · uitslag`),
       h("div", { class: "o-win-e", text: burgers ? "😇" : "🕵️" }),
-      h("h1", { class: "o-win-t" + (burgers ? "" : " o-glitch"), "data-text": lines.join(" ") }, t1, t2),
+      h("h1", { class: "o-win-t", "aria-label": lines.join(" ") }, t1, t2),
       h("p", { class: "o-win-s", text: burgers ? (infs.length > 1 ? "De infiltranten zijn ontmaskerd!" : "De infiltrant is ontmaskerd!") : pub.guess && pub.guess.correct ? "Het woord geraden — wat een bluffer!" : "Niemand had het door. Wat een bluf!" }),
       won === null ? null : h("p", { class: "o-win-me " + (won ? "is-won" : "is-lost"), text: won ? `Jij wint! +${myDelta} 🎉` : `Verloren… ${myDelta ? "+" + myDelta + " voor goed stemmen" : "volgende keer beter"} 😅` }));
     const reveal = h("section", { class: "o-glass o-card o-infs o-rise", style: { "--i": 1 } },
@@ -1606,7 +1618,7 @@
           h("span", { class: "o-row-d" + (d > 0 ? " up" : ""), text: d > 0 ? "+" + d : "±0" }),
           h("b", { class: "o-row-s", text: String(sc) }));
       }));
-    const again = v0.me.isHost ? btn([icon("play"), " Nog een potje"], "again", "o-btn-primary o-btn-hero", () => { sfx.whoosh(); act("next"); act("start"); }) : null;
+    const again = v0.me.isHost ? btn(h("span", { class: "o-btn-l" }, icon("play"), h("span", { text: "Nog een potje" })), "again", "o-btn-primary o-btn-hero", () => { sfx.whoosh(); act("next"); act("start"); }) : null;
     const lobby = v0.me.isHost ? btn("Naar de lobby", "to-lobby", "o-btn-glass o-btn-sm", () => { sfx.tap(); act("next"); }) : null;
     const dock = h("div", { class: "o-dock" }, again || waitLine("Wachten op de host…"), lobby);
     const el = h("div", { class: "o-view o-over " + (burgers ? "is-b" : "is-i") }, banner, reveal, words, board, dock);
@@ -1667,7 +1679,7 @@
         if (v.length > 1) { // plakken / autocorrect: verdelen over de vakjes
           const all = (code().slice(0, i) + v).slice(0, 4);
           setCode(all);
-          boxes[Math.min(3, all.length)] && boxes[Math.min(3, all.length - (all.length === 4 ? 1 : 0))].focus();
+          if (all.length === 4) { b.blur(); joinB.focus({ preventScroll: true }); } else boxes[all.length].focus();
           return;
         }
         b.value = v;
@@ -1707,7 +1719,6 @@
         h("span", { class: "o-how-n", text: String(i + 1) }), h("div", null, h("b", { text: e + " " + t }), h("p", { text: d }))))));
 
     root.replaceChildren(hero, resumeBox, profCard, actions, how);
-    afterFonts(() => fit(hero.querySelector(".o-brand"), 60, 26));
     return {
       pe, setCode, err, joinB, codebox, boxes,
       refresh() {
@@ -1843,7 +1854,7 @@
     preview(v) {
       previewVm = Object.assign({ presence: {}, pending: new Set(), status: "online", host: null, ended: null, brokerIndex: 0, since: Date.now() }, v);
       if (!(previewVm.pending instanceof Set)) previewVm.pending = new Set(previewVm.pending || []);
-      if (!isActive("room")) DVA.show("room");
+      if (!isActive("room")) { DVA.show("room"); return; } // hooks.room rendert
       cur.key = null;
       renderRoom(previewVm);
     },
