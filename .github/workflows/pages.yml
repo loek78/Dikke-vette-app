@@ -1,10 +1,11 @@
-# Publiceert de app op GitHub Pages bij elke push naar `release`.
-# Op `main` wordt gewerkt; een geteste versie gaat live met:  git push origin main:release
+# Publiceert de inhoud van de branch `release` op GitHub Pages.
+# De workflow draait op `main` (de Pages-omgeving laat alleen main toe), maar checkt `release` uit.
+# Op `main` wordt gewerkt; een geteste versie gaat live met:  npm run release
 name: Deploy naar GitHub Pages
 
 on:
   push:
-    branches: [release]
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -24,6 +25,8 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: release
       - uses: actions/configure-pages@v5
         with:
           enablement: true

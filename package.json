@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "node tools/dev.mjs",
     "test": "node --test \"test/*.test.*\" \"online/minis/__tests__/*.test.js\"",
-    "release": "git push origin main:release"
+    "release": "git push origin main:release && gh workflow run pages.yml --ref main"
   },
   "devDependencies": {
     "aedes": "^0.51.3",
