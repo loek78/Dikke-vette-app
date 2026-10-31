@@ -5,7 +5,8 @@
   "description": "Partytools + online multiplayer (Infiltrant) voor op je telefoon. De app zelf heeft geen build nodig; deze dependencies zijn alleen voor lokaal testen.",
   "scripts": {
     "dev": "node tools/dev.mjs",
-    "test": "node --test test/"
+    "test": "node --test \"test/*.test.*\" \"online/minis/__tests__/*.test.js\"",
+    "release": "git push origin main:release"
   },
   "devDependencies": {
     "aedes": "^0.51.3",

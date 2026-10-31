@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0b0705">
+  <title>Verbindingstest</title>
+  <!-- Test vanaf een echte telefoon welke publieke MQTT-servers bereikbaar zijn en of
+       vastgehouden berichten (retained) werken. ?broker=wss://... test alleen die server. -->
+  <style>
+    :root { color-scheme: dark; }
+    body { margin: 0; min-height: 100dvh; background: #0b0705; color: #ffe7b8; font: 16px/1.4 system-ui, -apple-system, sans-serif;
+           padding: calc(env(safe-area-inset-top) + 20px) 18px calc(env(safe-area-inset-bottom) + 24px); }
+    h1 { font-size: 24px; margin: 0 0 4px; }
+    p.sub { color: #b8a99a; margin: 0 0 18px; font-size: 14px; }
+    .card { background: #17100b; border: 1px solid rgba(255, 231, 184, .12); border-radius: 18px; padding: 14px 16px; margin-bottom: 12px; }
+    .card h2 { font-size: 14px; margin: 0 0 8px; word-break: break-all; color: #b8a99a; font-weight: 600; }
+    .row { display: flex; justify-content: space-between; gap: 10px; padding: 5px 0; border-top: 1px solid rgba(255, 231, 184, .08); font-size: 15px; }
+    .row:first-of-type { border-top: 0; }
+    .ok { color: #9dff3d; } .bad { color: #ff6a1a; } .wait { color: #b8a99a; }
+    .verdict { font-size: 18px; font-weight: 800; margin: 18px 0 8px; }
+    button { font: inherit; font-weight: 800; color: #0b0705; background: linear-gradient(90deg, #ff6a1a, #ffc247); border: 0;
+             border-radius: 999px; padding: 14px 22px; width: 100%; margin-top: 10px; }
+    .info { font-size: 13px; color: #b8a99a; margin-top: 16px; }
+    code { color: #ffc247; }
+  </style>
+</head>
+<body>
+  <h1>📡 Verbindingstest</h1>
+  <p class="sub">Checkt of jouw telefoon de spelservers kan bereiken.</p>
+  <div id="list"></div>
+  <div class="verdict" id="verdict">Bezig…</div>
+  <button id="again">Opnieuw testen</button>
+  <p class="info" id="info"></p>
+
+  <script src="../vendor/mqtt.min.js"></script>
+  <script>
+    const DEFAULT_BROKERS = ["wss://broker.emqx.io:8084/mqtt", "wss://broker.hivemq.com:8884/mqtt", "wss://test.mosquitto.org:8081/mqtt"];
+    const q = new URLSearchParams(location.search);
+    const brokers = q.get("broker") ? [q.get("broker")] : DEFAULT_BROKERS;
+    const list = document.getElementById("list"), verdict = document.getElementById("verdict");
+    document.getElementById("info").textContent =
+      `Browser: ${navigator.userAgent.replace(/^Mozilla\/5\.0 /, "").slice(0, 90)} · online: ${navigator.onLine}`;
+
+    function rid() { return Math.random().toString(36).slice(2, 10); }
+
+    function card(url) {
+      const el = document.createElement("div"); el.className = "card";
+      el.innerHTML = `<h2></h2>`; el.firstChild.textContent = url;
+      const rows = {};
+      for (const [k, label] of [["connect", "Verbinden"], ["rtt", "Bericht heen en terug"], ["retain", "Vastgehouden bericht"], ["will", "Afmelding (will)"]]) {
+        const r = document.createElement("div"); r.className = "row";
+        r.innerHTML = `<span></span><b class="wait">…</b>`; r.firstChild.textContent = label;
+        el.appendChild(r); rows[k] = r.lastChild;
+      }
+      list.appendChild(el);
+      return (k, ok, text) => { rows[k].textContent = text; rows[k].className = ok ? "ok" : "bad"; };
+    }
+
+    // Eén server testen: verbinden, roundtrip, retained ophalen met een tweede client, will van een abrupt gesloten client.
+    function testBroker(url) {
+      const set = card(url);
+      const topic = `dva/v1/TEST${rid().toUpperCase().slice(0, 4)}/`;
+      return new Promise((resolve) => {
+        const t0 = performance.now();
+        let done = false;
+        const finish = (ok) => { if (!done) { done = true; resolve(ok); } };
+        const timer = setTimeout(() => { set("connect", false, "geen antwoord (10 s)"); finish(false); try { a.end(true); } catch {} }, 10000);
+        const a = mqtt.connect(url, { clientId: "dva_" + rid(), clean: true, keepalive: 20, connectTimeout: 9000, reconnectPeriod: 0, protocolVersion: 4,
+          will: { topic: topic + "presence/a", payload: "0", retain: true, qos: 1 } });
+        a.on("error", (e) => { set("connect", false, "fout: " + (e && e.message || e)); clearTimeout(timer); finish(false); });
+        a.on("connect", () => {
+          clearTimeout(timer);
+          set("connect", true, `ok · ${Math.round(performance.now() - t0)} ms`);
+          const t1 = performance.now();
+          a.subscribe(topic + "#", { qos: 1 }, () => {
+            a.publish(topic + "state", JSON.stringify({ ping: 1 }), { qos: 1, retain: true });
+            a.publish(topic + "presence/a", "1", { qos: 1, retain: true });
+          });
+          let got = false;
+          a.on("message", (t, m) => {
+            if (t === topic + "state" && !got) {
+              got = true;
+              set("rtt", true, `ok · ${Math.round(performance.now() - t1)} ms`);
+              // Tweede client: ziet hij het vastgehouden bericht én de will als de eerste wegvalt?
+              const b = mqtt.connect(url, { clientId: "dva_" + rid(), clean: true, connectTimeout: 9000, reconnectPeriod: 0, protocolVersion: 4 });
+              const t2 = setTimeout(() => { set("retain", false, "niet ontvangen"); set("will", false, "niet getest"); cleanup(false); }, 9000);
+              let retained = false, will = false;
+              b.on("connect", () => b.subscribe(topic + "#", { qos: 1 }, () => {}));
+              b.on("message", (t, m) => {
+                if (t === topic + "state" && !retained) { retained = true; set("retain", true, "ok"); a.stream.destroy(); }
+                if (t === topic + "presence/a" && m.toString() === "0" && retained) { will = true; set("will", true, "ok"); cleanup(true); }
+              });
+              b.on("error", () => cleanup(false));
+              function cleanup(ok) {
+                clearTimeout(t2);
+                if (retained && !will) set("will", false, "niet binnen 9 s");
+                // Opruimen: vastgehouden testberichten wissen.
+                b.publish(topic + "state", "", { retain: true, qos: 0 });
+                b.publish(topic + "presence/a", "", { retain: true, qos: 0 });
+                setTimeout(() => { try { b.end(true); } catch {} try { a.end(true); } catch {} finish(ok && retained); }, 300);
+              }
+            }
+          });
+        });
+      });
+    }
+
+    async function run() {
+      list.textContent = ""; verdict.textContent = "Bezig…"; verdict.className = "verdict wait";
+      const results = await Promise.all(brokers.map(testBroker));
+      const okCount = results.filter(Boolean).length;
+      if (okCount) { verdict.textContent = `✅ ${okCount} van ${brokers.length} servers werkt. Samen spelen kan.`; verdict.className = "verdict ok"; }
+      else { verdict.textContent = "❌ Geen enkele server bereikbaar. Zit je op wifi met een strenge firewall? Probeer 4G/5G."; verdict.className = "verdict bad"; }
+    }
+    document.getElementById("again").onclick = run;
+    run();
+  </script>
+</body>
+</html>

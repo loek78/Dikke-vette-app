@@ -1,10 +1,10 @@
-# Publiceert de app op GitHub Pages bij elke push naar main.
-# `enablement: true` zet Pages aan als dat nog niet gebeurd is.
+# Publiceert de app op GitHub Pages bij elke push naar `release`.
+# Op `main` wordt gewerkt; een geteste versie gaat live met:  git push origin main:release
 name: Deploy naar GitHub Pages
 
 on:
   push:
-    branches: [main]
+    branches: [release]
   workflow_dispatch:
 
 permissions:
