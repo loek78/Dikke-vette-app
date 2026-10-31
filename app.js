@@ -3,7 +3,11 @@
 
   const $ = (s, el = document) => el.querySelector(s);
   const $$ = (s, el = document) => [...el.querySelectorAll(s)];
-  const COLORS = ["#ff2e93", "#22e6ff", "#ffe03d", "#9dff3d", "#8b5cff", "#ff8a00", "#ff5a3d", "#00e0a4", "#ff7af6", "#5a8bff"];
+  // Vuurpalet (SPEC-2 §A): warm, met één blauw vlammetje
+  const COLORS = ["#ff6a1a", "#ffc247", "#e8401c", "#ffe7b8", "#ff9a3c", "#5aa9ff", "#c98f5a", "#ffd98a", "#ff7a45", "#b8a99a"];
+  const INK = "#2a1208"; // donkere tekst op lichte vlakken
+  // Is een hex-kleur licht genoeg voor donkere tekst?
+  const isLight = (hex) => { const n = parseInt(hex.slice(1), 16); return (0.299 * (n >> 16) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)) > 150; };
   const rand = (n) => Math.floor(Math.random() * n);
   const shuffle = (a) => { a = [...a]; for (let i = a.length - 1; i > 0; i--) { const j = rand(i + 1); [a[i], a[j]] = [a[j], a[i]]; } return a; };
 
@@ -83,7 +87,12 @@
     window.scrollTo(0, 0);
     hooks[name] && hooks[name]();
   }
-  $$("[data-go]").forEach((b) => (b.onclick = () => { beep(520, .04); location.hash = b.dataset.go; }));
+  $$("[data-go]").forEach((b) => (b.onclick = () => {
+    beep(520, .04);
+    // "Speel samen": #online maakt meteen een kamer (online/ui.js leest dit vlaggetje)
+    if (b.dataset.autocreate) { try { sessionStorage.setItem("dva:autocreate", "1"); } catch { /* privémodus */ } }
+    location.hash = b.dataset.go;
+  }));
   $$("[data-back]").forEach((b) => (b.onclick = () => { history.length > 1 && location.hash ? history.back() : (location.hash = ""); }));
   addEventListener("hashchange", () => show(location.hash.slice(1)));
 
@@ -186,7 +195,7 @@
       const list = shuffle([...fingers.values()]);
       buzz([60, 40, 120]); fanfare();
       if (mode === "teams") {
-        const teamColors = ["#ff2e93", "#22e6ff"];
+        const teamColors = ["#ff6a1a", "#5aa9ff"]; // vuur tegen het blauwe vlammetje
         list.forEach((f, i) => {
           const t = i % 2;
           f.el.style.setProperty("--c", teamColors[t]);
@@ -209,7 +218,7 @@
       flood.style.left = w.x + "px"; flood.style.top = w.y + "px";
       flood.classList.add("go");
       requestAnimationFrame(() => (flood.style.transform = `scale(${Math.hypot(innerWidth, innerHeight) / 8})`));
-      confetti([w.c, "#fff"], 140);
+      confetti([w.c, "#fff3d6"], 140);
     }
     function reset() {
       clearTimeout(timer); clearInterval(beepIv);
@@ -229,8 +238,11 @@
     const canvas = $("#wheel"), ctx = canvas.getContext("2d");
     const pointer = $(".pointer"), result = $("#wheelResult"), spinBtn = $("#spinBtn");
     let rot = 0, spinning = false;
-    const editor = listEditor($("#wheelEditor"), "wheel", ["Loek", "Sanne", "Jeroen", "Fleur", "Mo", "Iris"],
+    const editor = listEditor($("#wheelEditor"), "wheel", ["Loek", "Jacques"],
       "Naam of optie (komma's mag)", () => draw());
+    // Radkleuren: gloed, vlam, hout, blauw… afwisselend licht/donker zodat buren verschillen
+    const WHEEL = ["#ff6a1a", "#ffc247", "#e8401c", "#ffe7b8", "#8a5a36", "#ff9a3c", "#5aa9ff", "#ffd98a", "#c0391a", "#c98f5a"];
+    const wheelColor = (i, n) => WHEEL[(n % WHEEL.length === 1 && i === n - 1) ? 1 : i % WHEEL.length];
 
     function size() {
       const dpr = devicePixelRatio || 1, w = canvas.clientWidth || 360;
@@ -242,16 +254,20 @@
       const W = canvas.width, R = W / 2, arc = (Math.PI * 2) / n;
       ctx.clearRect(0, 0, W, W);
       ctx.save(); ctx.translate(R, R);
-      // rand
-      ctx.beginPath(); ctx.arc(0, 0, R - 2, 0, Math.PI * 2); ctx.fillStyle = "#fff6ff"; ctx.fill();
+      // rand: gesmeed, donker metaal met een gloeiende ring
+      const rim = ctx.createRadialGradient(0, 0, R * .9, 0, 0, R);
+      rim.addColorStop(0, "#3a2416"); rim.addColorStop(.55, "#1d120a"); rim.addColorStop(1, "#0b0705");
+      ctx.beginPath(); ctx.arc(0, 0, R - 2, 0, Math.PI * 2); ctx.fillStyle = rim; ctx.fill();
+      ctx.beginPath(); ctx.arc(0, 0, R * .955, 0, Math.PI * 2); ctx.strokeStyle = "rgba(255,194,71,.55)"; ctx.lineWidth = R * .012; ctx.stroke();
       for (let i = 0; i < n; i++) {
         const a0 = rot + i * arc;
+        const c = items.length ? wheelColor(i, n) : "#2a1a10";
         ctx.beginPath(); ctx.moveTo(0, 0); ctx.arc(0, 0, R * .94, a0, a0 + arc); ctx.closePath();
-        ctx.fillStyle = items.length ? COLORS[i % COLORS.length] : "#333"; ctx.fill();
-        ctx.strokeStyle = "rgba(0,0,0,.25)"; ctx.lineWidth = R * .008; ctx.stroke();
+        ctx.fillStyle = c; ctx.fill();
+        ctx.strokeStyle = "rgba(11,7,5,.45)"; ctx.lineWidth = R * .008; ctx.stroke();
         if (!items.length) continue;
         ctx.save(); ctx.rotate(a0 + arc / 2);
-        ctx.fillStyle = "#120720"; ctx.textAlign = "right"; ctx.textBaseline = "middle";
+        ctx.fillStyle = isLight(c) ? INK : "#fff3d6"; ctx.textAlign = "right"; ctx.textBaseline = "middle";
         const fs = Math.min(R * .1, (R * .9 * arc) * .5);
         ctx.font = `900 ${fs}px ui-rounded, system-ui, sans-serif`;
         let label = items[i];
@@ -259,11 +275,15 @@
         ctx.fillText(label, R * .86, 0);
         ctx.restore();
       }
-      // pinnetjes
+      // warme glans over het rad
+      const sheen = ctx.createRadialGradient(-R * .3, -R * .35, 0, 0, 0, R);
+      sheen.addColorStop(0, "rgba(255,243,214,.28)"); sheen.addColorStop(.5, "rgba(255,243,214,0)"); sheen.addColorStop(1, "rgba(11,7,5,.35)");
+      ctx.beginPath(); ctx.arc(0, 0, R * .94, 0, Math.PI * 2); ctx.fillStyle = sheen; ctx.fill();
+      // pinnetjes: messing
       for (let i = 0; i < n; i++) {
         const a = rot + i * arc;
         ctx.beginPath(); ctx.arc(Math.cos(a) * R * .97, Math.sin(a) * R * .97, R * .018, 0, Math.PI * 2);
-        ctx.fillStyle = "#c9b8e0"; ctx.fill();
+        ctx.fillStyle = "#ffc247"; ctx.fill();
       }
       ctx.restore();
     }
@@ -295,7 +315,7 @@
         spinning = false;
         const win = items[idx];
         result.textContent = "🎉 " + win; void result.offsetWidth; result.classList.add("pop");
-        fanfare(); buzz([40, 30, 80]); confetti([COLORS[idx % COLORS.length], "#fff"]);
+        fanfare(); buzz([40, 30, 80]); confetti([wheelColor(idx, items.length), "#fff3d6", "#ffc247"]);
       })(t0);
     }
     spinBtn.onclick = spin;
@@ -307,7 +327,8 @@
       sy = null;
     });
 
-    const presets = window.WHEEL_PRESETS, names = Object.keys(presets);
+    // Eigen presets (data-vuur.js) eerst, dan de klassieke
+    const presets = Object.assign({}, window.VUUR_WHEEL_PRESETS || {}, window.WHEEL_PRESETS || {}), names = Object.keys(presets);
     let pi = 0;
     $("#wheelPresetBtn").onclick = () => {
       const name = names[pi++ % names.length];
@@ -322,14 +343,24 @@
   // KAARTSPEL
   // =========================================================
   (() => {
-    const decks = window.DECKS;
+    // Decks: eerst de eigen "bij het vuur"-decks (data-vuur.js), dan de klassieke, in vuurkleuren
+    const DECK_THEME = {
+      waarschijnlijk: ["#ffc247", "#ff6a1a"], nooit: ["#5aa9ff", "#2f5fa8"], doedurf: ["#e8401c", "#ff6a1a"], liever: ["#c98f5a", "#8a5a36"],
+    };
+    const decks = [...(window.VUUR_DECKS || []), ...(window.DECKS || [])].map((d) => {
+      const t = DECK_THEME[d.id];
+      return t ? Object.assign({}, d, { c: t[0], c2: t[1] }) : d;
+    });
     const picker = $("#deckPicker"), card = $("#card"), kicker = $("#cardKicker"), text = $("#cardText"), counter = $("#cardCounter");
     let deck = decks.find((d) => d.id === store.get("deck")) || decks[0];
     let pile = [], seen = 0;
+    const pencil = document.createElement("button");
+    pencil.className = "card-pencil hidden"; pencil.textContent = "✏️"; pencil.setAttribute("aria-label", "Namen aanpassen");
+    card.appendChild(pencil);
 
     decks.forEach((d) => {
       const b = document.createElement("button");
-      b.textContent = d.name; b.style.setProperty("--c", d.c);
+      b.textContent = d.name; b.style.setProperty("--c", d.c); b.style.setProperty("--ink", isLight(d.c) ? INK : "#fff3d6");
       b.onclick = () => { deck = d; store.set("deck", d.id); start(); beep(600, .04); };
       picker.appendChild(b);
     });
@@ -337,13 +368,55 @@
     function start() {
       $$("button", picker).forEach((b, i) => b.classList.toggle("on", decks[i] === deck));
       card.style.setProperty("--c", deck.c); card.style.setProperty("--c2", deck.c2);
+      card.style.setProperty("--ink", isLight(deck.c) || isLight(deck.c2) ? INK : "#fff3d6");
+      pencil.classList.toggle("hidden", !deck.duo);
       pile = deck.tod ? [] : shuffle(deck.items); seen = 0;
       next(true);
     }
+    // "Loek of Jacques?": de twee namen (dva:duo), aanpasbaar via het potlood
+    const duoNames = () => { const d = store.get("duo", ["Loek", "Jacques"]); return Array.isArray(d) && d.length === 2 ? d : ["Loek", "Jacques"]; };
+    function duoButtons() {
+      const row = document.createElement("div"); row.className = "duo";
+      duoNames().forEach((name) => {
+        const b = document.createElement("button"); b.textContent = name;
+        b.onclick = (e) => {
+          e.stopPropagation();
+          $$("button", row).forEach((x) => x.classList.remove("cheer")); void b.offsetWidth; b.classList.add("cheer");
+          fanfare(); buzz([30, 30, 60]); confetti([deck.c, deck.c2, "#ffc247", "#fff3d6"], 110);
+          setTimeout(() => b.classList.remove("cheer"), 950);
+        };
+        row.appendChild(b);
+      });
+      return row;
+    }
+    function duoEditor(row) {
+      const f = document.createElement("form"); f.className = "duo-edit";
+      const [a, b] = duoNames().map((v) => { const i = document.createElement("input"); i.maxLength = 16; i.value = v; i.enterKeyHint = "done"; return i; });
+      const ok = document.createElement("button"); ok.textContent = "Klaar ✓";
+      f.append(a, b, ok);
+      f.onsubmit = (e) => {
+        e.preventDefault();
+        store.set("duo", [a.value.trim() || "Loek", b.value.trim() || "Jacques"]);
+        f.replaceWith(duoButtons()); beep(740, .05); toast("Namen opgeslagen");
+      };
+      row.replaceWith(f); a.focus(); a.select();
+    }
+    pencil.onclick = (e) => {
+      e.stopPropagation();
+      const row = $(".duo", text); if (row) duoEditor(row); else { const f = $(".duo-edit", text); f && f.requestSubmit(); }
+    };
     function next(first) {
       card.classList.remove("fly", "snap", "enter");
       card.style.transform = ""; card.style.opacity = "";
-      if (deck.tod) {
+      if (deck.duo) {
+        if (!pile.length) { pile = shuffle(deck.items); if (!first) toast("Deck geschud! 🔀"); seen = 0; }
+        kicker.textContent = deck.kicker;
+        text.textContent = "";
+        const wrap = document.createElement("div"); wrap.style.width = "100%";
+        const q = document.createElement("div"); q.textContent = pile.pop();
+        wrap.append(q, duoButtons()); text.appendChild(wrap);
+        seen++; counter.textContent = `${seen} / ${deck.items.length}`;
+      } else if (deck.tod) {
         kicker.textContent = deck.kicker;
         text.innerHTML = `<div style="width:100%"><div>Kies maar…</div><div class="tod"><button data-t="truths">Durf 🗣️</button><button data-t="dares">Doe 💪</button></div></div>`;
         $$(".tod button", text).forEach((b) => (b.onclick = (e) => {
@@ -366,7 +439,7 @@
     // swipen / tikken
     let sx = 0, sy = 0, dx = 0, drag = false, moved = false;
     card.addEventListener("pointerdown", (e) => {
-      if (e.target.closest("button")) return;
+      if (e.target.closest("button, input, form")) return;
       drag = true; moved = false; sx = e.clientX; sy = e.clientY; dx = 0;
       card.classList.remove("snap", "enter"); card.setPointerCapture(e.pointerId);
     });
@@ -401,8 +474,10 @@
   (() => {
     const out = $("#teamsOut"), countEl = $("#teamCount");
     let count = store.get("teamCount", 2);
-    const NAMES = ["Team Tijger 🐯", "Team Haai 🦈", "Team Draak 🐉", "Team Uil 🦉", "Team Eenhoorn 🦄", "Team Kip 🐔", "Team Panda 🐼", "Team Vos 🦊"];
-    const editor = listEditor($("#teamsEditor"), "players", ["Loek", "Sanne", "Jeroen", "Fleur", "Mo", "Iris", "Daan", "Noor"],
+    const NAMES = ["Team Vuur 🔥", "Team Hout 🪵", "Team Vonk ✨", "Team Uil 🦉", "Team Wolf 🐺", "Team Bijl 🪓", "Team Vos 🦊", "Team Maan 🌙"];
+    // Teamkleuren: vuur, blauw vlammetje, heet rood, hout, vlam, as, oranje, nacht
+    const TEAM_GRADS = [["#ff6a1a", "#ffc247"], ["#5aa9ff", "#2f5fa8"], ["#e8401c", "#ff6a1a"], ["#c98f5a", "#8a5a36"], ["#ffc247", "#ffe7b8"], ["#b8a99a", "#ffe7b8"], ["#ff9a3c", "#e8401c"], ["#3a2416", "#8a5a36"]];
+    const editor = listEditor($("#teamsEditor"), "players", ["Loek", "Jacques", "Sanne", "Jeroen", "Fleur", "Mo"],
       "Spelers toevoegen (komma's mag)");
     const render = () => { countEl.textContent = count; store.set("teamCount", count); };
     $("#teamMinus").onclick = () => { count = Math.max(2, count - 1); render(); };
@@ -416,9 +491,10 @@
       out.innerHTML = "";
       teams.forEach((t, i) => {
         const el = document.createElement("div");
-        el.className = "team";
-        el.style.setProperty("--c", COLORS[(i * 2) % COLORS.length]);
-        el.style.setProperty("--c2", COLORS[(i * 2 + 1) % COLORS.length]);
+        const g = TEAM_GRADS[i % TEAM_GRADS.length];
+        el.className = "team" + (isLight(g[0]) || isLight(g[1]) ? "" : " is-light");
+        el.style.setProperty("--c", g[0]);
+        el.style.setProperty("--c2", g[1]);
         el.style.animationDelay = i * 0.12 + "s";
         el.innerHTML = `<h3></h3><ul></ul>`;
         el.firstChild.textContent = names[i];
@@ -493,16 +569,66 @@
     build();
   })();
 
-  // ---------- PWA ----------
+  // ---------- Home: begroeting, het vuur en de vonkjes ----------
+  function greeting() {
+    const h = new Date().getHours();
+    if (h >= 1 && h < 5) return "Nachtbrakers… 🦉";
+    if (h < 12) return "Goeiemorgen, mannen ☕";
+    if (h < 18) return "Goeiemiddag, mannen";
+    return "Goeienavond, mannen";
+  }
+  const greetEl = $("#greet");
+  hooks.home = () => { if (greetEl) greetEl.textContent = greeting(); };
+  hooks.home();
+  let heroFire = null;
+  if (window.DVFire) {
+    try {
+      const bg = $("#embers"); if (bg) DVFire.embers(bg, { density: 0.3 });
+      const hf = $("#heroFire"); if (hf) heroFire = DVFire.flame(hf, { intensity: 0.72, embers: true, blueTips: true, logs: true });
+    } catch (e) { console.error(e); }
+  }
+  // Even oplaaien als je op de grote knop tikt
+  $(".tile.t-online") && $(".tile.t-online").addEventListener("pointerdown", () => heroFire && heroFire.burst());
+
+  // ---------- PWA: installeren / "Zet op je beginscherm" ----------
   let deferred;
-  addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); deferred = e; $("#installBtn").classList.remove("hidden"); });
-  $("#installBtn").onclick = async () => {
+  const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  const isAndroid = /android/i.test(navigator.userAgent);
+  const standalone = () => matchMedia("(display-mode: standalone)").matches || !!navigator.standalone;
+  const sheet = $("#installSheet");
+  function openSheet() {
+    sheet.hidden = false;
+    $("#installIll").hidden = !isIOS;
+    $("#installGo").hidden = !deferred;
+    $("#installText").textContent = isIOS
+      ? "Open deze pagina in Safari, tik onderin op Deel en kies 'Zet op beginscherm'. Daarna opent hij als een echte app."
+      : deferred
+        ? "Eén tik en hij staat tussen je apps: beeldvullend, zonder adresbalk, ook zonder internet."
+        : "Tik rechtsboven op ⋮ en kies 'App installeren' of 'Toevoegen aan startscherm'. Daarna opent hij als een echte app.";
+    requestAnimationFrame(() => requestAnimationFrame(() => sheet.classList.add("open")));
+  }
+  function closeSheet() {
+    sheet.classList.remove("open"); store.set("installHint", true);
+    setTimeout(() => { sheet.hidden = true; }, 500);
+  }
+  $$("#installSheet [data-close]").forEach((b) => (b.onclick = closeSheet));
+  async function install() {
     if (!deferred) return;
-    deferred.prompt(); await deferred.userChoice; deferred = null; $("#installBtn").classList.add("hidden");
-  };
-  const standalone = matchMedia("(display-mode: standalone)").matches || navigator.standalone;
-  if (/iphone|ipad|ipod/i.test(navigator.userAgent) && !standalone && !store.get("iosHint")) {
-    setTimeout(() => { toast("Tip: Deel ➜ 'Zet op beginscherm' 📲"); store.set("iosHint", true); }, 2500);
+    deferred.prompt(); const r = await deferred.userChoice; deferred = null;
+    $("#installBtn").classList.add("hidden"); $("#installGo").hidden = true;
+    if (r && r.outcome === "accepted") { toast("Geïnstalleerd 🔥"); closeSheet(); }
+  }
+  addEventListener("beforeinstallprompt", (e) => {
+    e.preventDefault(); deferred = e;
+    $("#installBtn").classList.remove("hidden"); if (!sheet.hidden) $("#installGo").hidden = false;
+  });
+  $("#installBtn").onclick = install;
+  $("#installGo").onclick = install;
+  addEventListener("appinstalled", () => { deferred = null; $("#installBtn").classList.add("hidden"); closeSheet(); });
+  // Eén keer, na 3 s, alleen op een telefoon die 'm nog niet op het beginscherm heeft (dva:iosHint = oude tip)
+  const quiet = /[?&](preview|test)\b/.test(location.search);
+  if ((isIOS || isAndroid) && !standalone() && !quiet && !store.get("installHint") && !store.get("iosHint")) {
+    setTimeout(() => { if (!standalone() && screens.home.classList.contains("active")) openSheet(); }, 3000);
   }
   if ("serviceWorker" in navigator && location.protocol !== "file:") {
     addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));

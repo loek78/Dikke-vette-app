@@ -24,7 +24,7 @@ function runtimeFiles() {
   for (const css of [...files].filter((f) => f.endsWith(".css"))) {
     const dir = css.includes("/") ? css.slice(0, css.lastIndexOf("/") + 1) : "";
     for (const m of readFileSync(join(ROOT, css), "utf8").matchAll(/url\("?([^")]+)"?\)/g)) {
-      if (m[1].startsWith("data:")) continue;
+      if (m[1].startsWith("data:") || m[1].startsWith("#")) continue; // data-URI of SVG-id (url(#grad)) is geen bestand
       files.add(new URL(m[1], "http://x/" + dir).pathname.slice(1));
     }
   }

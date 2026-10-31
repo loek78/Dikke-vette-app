@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
-  <meta name="theme-color" content="#0d0618">
-  <meta name="description" content="Dikke Vette App — partytools voor op de bank en in de kroeg.">
+  <meta name="theme-color" content="#0b0705">
+  <meta name="description" content="Dikke Vette App — voor Loek &amp; Jacques, bij het vuur: samen spelen op je eigen telefoon, plus vingerkiezer, rad, kaarten, teams en dobbelstenen.">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -17,55 +17,59 @@
   <link rel="preload" href="fonts/unbounded-latin-700-normal.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="styles.css">
   <link rel="stylesheet" href="online/online.css">
+  <link rel="stylesheet" href="online/story.css">
 </head>
 <body>
+  <canvas id="embers" aria-hidden="true"></canvas>
   <canvas id="confetti" aria-hidden="true"></canvas>
 
   <!-- HOME -->
   <main class="screen active" data-screen="home">
     <header class="hero">
-      <div class="logo" aria-hidden="true">🔥</div>
+      <p class="greet" id="greet">Goeienavond, mannen</p>
       <h1><span>DIKKE</span><span>VETTE</span><span>APP</span></h1>
-      <p class="tagline">Partytools voor op de bank &amp; in de kroeg</p>
+      <p class="tagline">Voor Loek &amp; Jacques, bij het vuur 🔥</p>
+      <div class="hearth" aria-hidden="true"><canvas id="heroFire"></canvas></div>
     </header>
 
     <nav class="tiles">
-      <button class="tile t-online" data-go="online" aria-label="Infiltrant — online, ieder op eigen telefoon">
-        <span class="t-online-badge">NIEUW</span>
-        <span class="t-online-art" aria-hidden="true"><span>🕵️</span></span>
-        <span class="tile-kicker">Online · ieder op eigen telefoon</span>
-        <span class="tile-title">Infiltrant</span>
-        <span class="tile-sub">Eén van jullie liegt. Wie is de infiltrant?</span>
+      <button class="tile t-online" data-go="online" data-autocreate="1" aria-label="Speel samen — maak meteen een kamer, de ander doet mee via jouw link">
+        <span class="tile-title"><span class="fl" aria-hidden="true">🔥</span>Speel samen</span>
+        <span class="tile-sub">Jij maakt de kamer, de ander tikt op je link.</span>
+        <span class="tile-kicker">Vuurwacht · Minigames · Infiltrant</span>
       </button>
-      <button class="tile t-finger" data-go="finger">
-        <span class="tile-emoji">☝️</span>
-        <span class="tile-title">Vingerkiezer</span>
-        <span class="tile-sub">Iedereen een vinger op het scherm. Wie is de pineut?</span>
-      </button>
-      <button class="tile t-wheel" data-go="wheel">
-        <span class="tile-emoji">🎡</span>
-        <span class="tile-title">Rad van Fortuin</span>
-        <span class="tile-sub">Draai voor namen, eten, opdrachten…</span>
-      </button>
-      <button class="tile t-cards" data-go="cards">
-        <span class="tile-emoji">🃏</span>
-        <span class="tile-title">Kaartspel</span>
-        <span class="tile-sub">Meest waarschijnlijk, Ik heb nog nooit, Doe of Durf</span>
-      </button>
-      <button class="tile t-teams" data-go="teams">
-        <span class="tile-emoji">⚔️</span>
-        <span class="tile-title">Teams maken</span>
-        <span class="tile-sub">Eerlijk (nou ja) verdelen in teams</span>
-      </button>
-      <button class="tile t-dice" data-go="dice">
-        <span class="tile-emoji">🎲</span>
-        <span class="tile-title">Dobbel&shy;stenen</span>
-        <span class="tile-sub">Tik of schud je telefoon</span>
-      </button>
+      <h2 class="ook">Ook leuk</h2>
+      <div class="ook-row">
+        <button class="tile t-finger" data-go="finger">
+          <span class="tile-emoji">☝️</span>
+          <span class="tile-title">Vingerkiezer</span>
+          <span class="tile-sub">Wie is de pineut?</span>
+        </button>
+        <button class="tile t-wheel" data-go="wheel">
+          <span class="tile-emoji">🎡</span>
+          <span class="tile-title">Rad van Fortuin</span>
+          <span class="tile-sub">Wie gooit er hout op?</span>
+        </button>
+        <button class="tile t-cards" data-go="cards">
+          <span class="tile-emoji">🃏</span>
+          <span class="tile-title">Kaartspel</span>
+          <span class="tile-sub">Vuurpraat, Loek of Jacques…</span>
+        </button>
+        <button class="tile t-teams" data-go="teams">
+          <span class="tile-emoji">⚔️</span>
+          <span class="tile-title">Teams maken</span>
+          <span class="tile-sub">Eerlijk (nou ja) verdelen</span>
+        </button>
+        <button class="tile t-dice" data-go="dice">
+          <span class="tile-emoji">🎲</span>
+          <span class="tile-title">Dobbel&shy;stenen</span>
+          <span class="tile-sub">Tik of schud je telefoon</span>
+        </button>
+      </div>
     </nav>
 
     <footer class="home-foot">
-      <button id="installBtn" class="ghost hidden">📲 Installeer op je telefoon</button>
+      <button id="installBtn" class="ghost hidden">📲 Zet op je beginscherm</button>
       <button id="soundBtn" class="ghost">🔊 Geluid aan</button>
     </footer>
   </main>
@@ -160,14 +164,14 @@
     <button class="ghost" id="shakeBtn">📳 Schudden aanzetten</button>
   </section>
 
-  <!-- INFILTRANT ONLINE: start (profiel, kamer maken / meedoen) -->
+  <!-- SAMEN SPELEN: start (profiel, kamer maken / meedoen) -->
   <section class="screen ol" data-screen="online">
     <div class="aurora" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
     <button class="back" data-back aria-label="Terug">‹</button>
     <div class="o-home" id="olHome"></div>
   </section>
 
-  <!-- INFILTRANT ONLINE: in de kamer (rendert per fase) -->
+  <!-- SAMEN SPELEN: in de kamer (rendert per spel en fase) -->
   <section class="screen ol" data-screen="room">
     <div class="aurora" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
     <div class="o-room" id="roomApp"></div>
@@ -175,13 +179,47 @@
 
   <div class="toast" id="toast"></div>
 
+  <!-- Eerste keer: zet 'm op je beginscherm (app.js vult de tekst per platform) -->
+  <div class="dv-sheet-wrap" id="installSheet" hidden>
+    <div class="dv-sheet-bg" data-close></div>
+    <div class="dv-sheet" role="dialog" aria-modal="true" aria-labelledby="installTitle">
+      <div class="dv-grab"></div>
+      <div class="sheet-e" aria-hidden="true">🔥</div>
+      <h2 id="installTitle">Zet 'm op je beginscherm</h2>
+      <p id="installText">Dan staat de app als een echte app tussen je andere apps en opent hij beeldvullend.</p>
+      <div class="ios-ill" id="installIll" hidden>
+        <div class="ios-step pulse"><b><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V4M8 8l4-4 4 4"/><path d="M6 11v8a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1v-8"/></svg></b>Tik onderin op Deel</div>
+        <div class="ios-arrow" aria-hidden="true">➜</div>
+        <div class="ios-step"><b><span class="plus">+</span></b>Zet op beginscherm</div>
+      </div>
+      <button class="primary" id="installGo" hidden>📲 Installeren</button>
+      <button class="ghost" data-close>Later misschien</button>
+    </div>
+  </div>
+
   <script src="data.js"></script>
+  <script src="data-vuur.js"></script>
   <script src="vendor/mqtt.min.js"></script>
   <script src="vendor/qrcode.js"></script>
+  <script src="fire.js"></script>
   <script src="online/words.js"></script>
+  <script src="online/room.js"></script>
   <script src="online/engine.js"></script>
+  <script src="online/minis/core.js"></script>
+  <script src="online/minis/blaasbalg.js"></script>
+  <script src="online/minis/bijl.js"></script>
+  <script src="online/minis/vonken.js"></script>
+  <script src="online/minis/slot.js"></script>
+  <script src="online/minis/echo.js"></script>
+  <script src="online/minis/snel.js"></script>
+  <script src="online/minis/verhaal.js"></script>
+  <script src="online/story.js"></script>
+  <script src="online/story-engine.js"></script>
+  <script src="online/arcade.js"></script>
   <script src="online/net.js"></script>
   <script src="app.js"></script>
+  <script src="online/story-ui.js"></script>
+  <script src="online/arcade-ui.js"></script>
   <script src="online/ui.js"></script>
 </body>
 </html>

@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <title>Vuurwacht — preview</title>
+  <!-- Ontwerp-QA voor de verhaalmodus en de arcade: elk scherm met vaste fixture-states, zonder netwerk of engine.
+       ?preview=title|card|scene-gloei|scene-vorst|choice|choice-voted|flip|mini-howto|miniResult-win|miniResult-lose|fail|
+                ending-legende|ending-nippertje|arcade-pick|arcade-result
+       Extra: &me=p2 (kijk als Jacques, geen host) · &players=3 (met Sanne) · &instant=1 (geen typemachine/animaties)
+              &line=N (scène: begin bij regel N) · &ready=1 (jij bent al klaar) -->
+  <link rel="stylesheet" href="../styles.css">
+  <link rel="stylesheet" href="online.css">
+  <link rel="stylesheet" href="story.css">
+  <style>
+    html, body { background: #0b0705; }
+    body::before { background: #0b0705; }
+    .screen.ol { --safe-top: 0px; --safe-bot: 0px; }
+    /* Vuurthema voor de kamerbalk, zoals de echte app die krijgt */
+    .o-bar { background: linear-gradient(180deg, rgba(11, 7, 5, 0.9), rgba(11, 7, 5, 0.55) 70%, rgba(11, 7, 5, 0)); }
+    .o-bar-chip, .o-bar-btn { background: linear-gradient(180deg, rgba(255, 231, 184, 0.14), rgba(255, 231, 184, 0.06)); box-shadow: inset 0 1px 0 rgba(255, 231, 184, 0.2), inset 0 0 0 1px rgba(255, 194, 71, 0.18); color: #ffe7b8; }
+    .o-bar-k { color: #b8a99a; } .o-bar-ic { color: #b8a99a; }
+    .o-bar-code { color: #ffe7b8; text-shadow: 0 0 14px rgba(255, 194, 71, 0.7); }
+    .o-pill[data-state="live"] { background: rgba(255, 194, 71, 0.14); color: #ffd98a; box-shadow: inset 0 0 0 1px rgba(255, 194, 71, 0.4); }
+    .pv-nav { position: fixed; right: 8px; bottom: 8px; z-index: 99; display: flex; gap: 6px; opacity: 0.25; transition: opacity 0.2s; }
+    .pv-nav:hover { opacity: 1; }
+    .pv-nav select { font: 12px system-ui; background: #17100b; color: #ffe7b8; border: 1px solid #3a2a20; border-radius: 8px; padding: 4px; }
+    body.shot .pv-nav { display: none; }
+  </style>
+</head>
+<body>
+  <canvas id="confetti" aria-hidden="true" style="position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:50"></canvas>
+  <section class="screen ol active" data-screen="room" data-phase="story">
+    <div class="o-room" id="roomApp">
+      <header class="o-bar">
+        <button class="o-bar-chip" type="button" aria-label="Kamer en spelers"><span class="o-bar-k">Kamer</span><b class="o-bar-code">VUUR</b>
+          <svg viewBox="0 0 24 24" class="o-ic o-bar-ic" aria-hidden="true"><path d="M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM2 21a7 7 0 0 1 14 0M16 3.5a4 4 0 0 1 0 7.5M22 21a7 7 0 0 0-4-6.3"/></svg></button>
+        <span class="o-pill" data-state="live" role="status"><i></i><span>Live</span></span>
+        <button class="o-bar-btn" type="button" aria-label="Verlaten"><svg viewBox="0 0 24 24" class="o-ic" aria-hidden="true"><path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3M10 8l-4 4 4 4M6 12h10"/></svg></button>
+      </header>
+      <div class="o-banner" role="status"></div>
+      <main class="o-stage" id="stage"></main>
+    </div>
+  </section>
+  <div class="toast" id="toast"></div>
+  <nav class="pv-nav"><select id="pvSel" aria-label="Preview"></select></nav>
+
+  <script>
+    // Minimale DVA (geluid/trillen/toast/confetti) zodat de UI buiten de app draait.
+    (function () {
+      const COLORS = ["#ff6a1a", "#ffc247", "#e8401c", "#5aa9ff", "#8a5a36", "#ffe7b8"];
+      let ac;
+      function audio() { try { if (!ac) ac = new (window.AudioContext || window.webkitAudioContext)(); if (ac.state === "suspended") ac.resume(); return ac; } catch (e) { return null; } }
+      function beep(freq = 880, dur = 0.05, type = "square", vol = 0.08, when = 0) {
+        const a = audio(); if (!a || a.state !== "running") return;
+        const t = a.currentTime + when, o = a.createOscillator(), g = a.createGain();
+        o.type = type; o.frequency.setValueAtTime(freq, t);
+        g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+        o.connect(g).connect(a.destination); o.start(t); o.stop(t + dur + 0.02);
+      }
+      const cv = document.getElementById("confetti"), cx = cv.getContext("2d");
+      let parts = [], raf = 0;
+      function confetti(colors = COLORS, n = 160) {
+        const dpr = devicePixelRatio || 1;
+        cv.width = innerWidth * dpr; cv.height = innerHeight * dpr; cx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        for (let i = 0; i < n; i++) parts.push({ x: innerWidth / 2 + (Math.random() - .5) * 80, y: innerHeight * .45, vx: (Math.random() - .5) * 16, vy: -Math.random() * 16 - 6, r: Math.random() * Math.PI, vr: (Math.random() - .5) * .4, w: 6 + Math.random() * 8, h: 4 + Math.random() * 6, c: colors[Math.floor(Math.random() * colors.length)], life: 0 });
+        if (!raf) raf = requestAnimationFrame(step);
+      }
+      function step() {
+        cx.clearRect(0, 0, innerWidth, innerHeight);
+        parts = parts.filter((p) => p.y < innerHeight + 40 && p.life < 400);
+        for (const p of parts) { p.life++; p.vy += .45; p.vx *= .99; p.x += p.vx; p.y += p.vy; p.r += p.vr; cx.save(); cx.translate(p.x, p.y); cx.rotate(p.r); cx.fillStyle = p.c; cx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h * Math.abs(Math.cos(p.life / 6))); cx.restore(); }
+        raf = parts.length ? requestAnimationFrame(step) : 0;
+      }
+      let toastT;
+      function toast(msg) { const t = document.getElementById("toast"); t.textContent = msg; t.classList.add("show"); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove("show"), 2200); }
+      window.DVA = { COLORS, beep, fanfare: () => [523, 659, 784, 1047].forEach((f, i) => beep(f, 0.22, "triangle", 0.12, i * 0.11)), buzz(p) { try { navigator.vibrate && navigator.vibrate(p); } catch (e) { /* */ } }, toast, confetti,
+        rand: (n) => Math.floor(Math.random() * n), store: { get(k, d) { try { const v = localStorage.getItem("dva:" + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } }, set(k, v) { try { localStorage.setItem("dva:" + k, JSON.stringify(v)); } catch (e) { /* */ } } } };
+    })();
+  </script>
+  <script src="../fire.js"></script>
+  <script src="../data.js"></script>
+  <script src="../data-vuur.js"></script>
+  <script src="minis/core.js"></script>
+  <script src="minis/blaasbalg.js"></script>
+  <script src="minis/bijl.js"></script>
+  <script src="minis/vonken.js"></script>
+  <script src="minis/slot.js"></script>
+  <script src="minis/echo.js"></script>
+  <script src="minis/snel.js"></script>
+  <script src="minis/verhaal.js"></script>
+  <script src="story.js"></script>
+  <script src="story-ui.js"></script>
+  <script src="arcade-ui.js"></script>
+  <script>
+    (function () {
+      "use strict";
+      const q = new URLSearchParams(location.search);
+      const id = q.get("preview") || "title";
+      const IDS = ["title", "card", "scene-gloei", "scene-vorst", "choice", "choice-voted", "flip", "mini-howto", "miniResult-win", "miniResult-lose", "fail", "ending-legende", "ending-nippertje", "arcade-pick", "arcade-result"];
+      const sel = document.getElementById("pvSel");
+      IDS.forEach((x) => { const o = document.createElement("option"); o.value = x; o.textContent = x; o.selected = x === id; sel.append(o); });
+      sel.onchange = () => { q.set("preview", sel.value); location.search = q.toString(); };
+      if (q.has("shot")) document.body.classList.add("shot");
+
+      const ST = window.DV_STORY;
+      const ALL = [
+        { pid: "p1", name: "Loek", avatar: "🦊", color: "#ff6a1a", alive: true, spectator: false, left: false },
+        { pid: "p2", name: "Jacques", avatar: "🐻", color: "#5aa9ff", alive: true, spectator: false, left: false },
+        { pid: "p3", name: "Sanne", avatar: "🦉", color: "#ffc247", alive: true, spectator: false, left: false },
+      ];
+      const players = ALL.slice(0, Math.max(2, Math.min(3, +(q.get("players") || 2))));
+      const pids = players.map((p) => p.pid);
+      const mePid = q.get("me") || "p1";
+      const me = { pid: mePid, isHost: mePid === "p1" };
+      const debug = { instant: q.has("instant") };
+      if (q.has("line")) debug.line = +q.get("line");
+
+      // Stap-indexen uit het echte script, zodat de fixtures meebewegen met online/story.js.
+      const chIdx = (cid) => ST.chapters.findIndex((c) => c.id === cid);
+      const stepIdx = (cid, pred) => ST.chapters[chIdx(cid)].steps.findIndex(pred);
+      const firstScene = (cid, n) => stepIdx(cid, (s) => s.type === "scene" && (n == null || --n < 0));
+      const choiceIdx = (cid, choiceId) => stepIdx(cid, (s) => s.type === "choice" && s.id === choiceId);
+      const miniIdx = (cid) => stepIdx(cid, (s) => s.type === "mini");
+
+      const now = Date.now();
+      const runStats = (over) => Object.assign({ startedAt: now - 1500000, endedAt: null, ending: null, fireAtDawn: null, minis: [], choices: {}, flips: 1, fails: 0, fireMin: 3, fireMax: 9, mvpCounts: {} }, over || {});
+      function base(over) {
+        const s = {
+          v: 1, game: "story", code: "VUUR", hostPid: "p1", phase: "title", updatedAt: now, settings: { difficulty: "normaal" }, runNo: 1,
+          players: players.map((p) => Object.assign({}, p)), scores: {}, acks: {}, removed: [],
+          chapter: -1, step: -1, fire: 5, maxFire: 10, startFire: 4, burned: 0, fireAtChapterStart: 5,
+          flags: {}, ready: [], voted: [], lastChoice: null, flip: null, mini: null, miniResult: null, fireChange: null, ending: null,
+          checkpoint: null, runStats: runStats(), stats: { story: { runs: 1, finished: 0, fails: 0, endings: {}, bestEnding: null, bestFire: null } },
+          x: "p2", mvp: null, active: pids,
+        };
+        return Object.assign(s, over || {});
+      }
+      const bots = (mid, difficulty, seed) => { const def = DVMini.get(mid), r = {}; pids.forEach((pid, i) => { r[pid] = def.bot ? def.bot(DVMini.rng(seed + i * 7), difficulty) : null; }); return r; };
+      // Uitslag via de echte score-functie van de minigame, zodat regels en perPlayer kloppen met wat de engine levert.
+      function result(mid, difficulty, seed, fireBefore, force) {
+        const def = DVMini.get(mid);
+        let sc = def.score(bots(mid, difficulty, seed), { difficulty, players });
+        if (force && typeof force === "function") sc = force(sc);
+        const logs = Math.max(-2, Math.min(4, Math.round(sc.logs)));
+        const verdict = logs >= 2 ? "win" : logs >= 0 ? "meh" : "lose";
+        return { id: mid, kind: def.kind, nonce: 1, difficulty, logs, lines: sc.lines || [], mvp: sc.mvp || null, perPlayer: sc.perPlayer || {}, pids, skipped: false, verdict,
+          fireBefore, fireAfter: Math.max(0, Math.min(10, fireBefore + logs)), line: null };
+      }
+
+      let pub, priv = null, game = "story";
+      switch (id) {
+        case "title": pub = base({ phase: "title", chapter: -1, step: -1, fire: 4, ready: q.has("ready") ? [mePid] : [] }); break;
+        case "card": pub = base({ phase: "card", chapter: chIdx("kist"), step: -1, fire: 5, burned: 1, ready: q.has("ready") ? [mePid] : ["p2"].filter((p) => p !== mePid) }); break;
+        case "scene-gloei": {
+          const c = chIdx("proloog");
+          pub = base({ phase: "scene", chapter: c, step: firstScene("proloog", 0), fire: 4, x: "p1" });
+          if (!q.has("line")) debug.line = 3; // "Zo. Zitten jullie lekker? …"
+          break;
+        }
+        case "scene-vorst": {
+          const c = chIdx("hout");
+          pub = base({ phase: "scene", chapter: c, step: firstScene("hout", 0), fire: 3, x: "p2" });
+          if (!q.has("line")) debug.line = 7; // "U zoekt hout, hoor ik. …"
+          break;
+        }
+        case "choice": pub = base({ phase: "choice", chapter: chIdx("hout"), step: choiceIdx("hout", "bijl"), fire: 3, voted: [] }); break;
+        case "choice-voted": pub = base({ phase: "choice", chapter: chIdx("hout"), step: choiceIdx("hout", "bijl"), fire: 3, voted: [mePid] }); priv = { vote: 0 }; break;
+        case "flip": {
+          const c = chIdx("proloog"), s = choiceIdx("proloog", "belofte");
+          const votes = {}; pids.forEach((p, i) => { votes[p] = i % 2; });
+          pub = base({ phase: "flip", chapter: c, step: s, fire: 4, flip: { id: "belofte", options: [0, 1], votes, result: 0 }, ready: q.has("ready") ? [mePid] : [] });
+          break;
+        }
+        case "mini-howto": {
+          const c = chIdx("proloog"), s = miniIdx("proloog");
+          pub = base({ phase: "mini", chapter: c, step: s, fire: 4, mini: { id: "blaasbalg", kind: "local", nonce: 1, seed: 12345, difficulty: 1, roles: null, pids, submitted: [], startedAt: now } });
+          break;
+        }
+        case "miniResult-win": {
+          const c = chIdx("proloog"), s = miniIdx("proloog");
+          const r = result("blaasbalg", 1, 4242, 4, (sc) => Object.assign(sc, { logs: Math.max(3, sc.logs) }));
+          r.mvp = r.mvp || "p2";
+          r.line = ST.chapters[c].steps[s][r.verdict];
+          pub = base({ phase: "miniResult", chapter: c, step: s, fire: r.fireAfter, miniResult: r, mvp: r.mvp, runStats: runStats({ minis: [{ chapter: c, id: "blaasbalg", difficulty: 1, logs: r.logs, verdict: r.verdict, mvp: r.mvp }], mvpCounts: { [r.mvp]: 1 } }) });
+          break;
+        }
+        case "miniResult-lose": {
+          const c = chIdx("hout"), s = miniIdx("hout");
+          const r = result("bijl", 3, 99, 3, (sc) => Object.assign(sc, { logs: -1, mvp: null }));
+          r.line = ST.chapters[c].steps[s][r.verdict];
+          pub = base({ phase: "miniResult", chapter: c, step: s, fire: r.fireAfter, flags: { belofte: "ja", bijl: "grote" }, miniResult: r, mvp: null });
+          break;
+        }
+        case "fail": {
+          const c = chIdx("mist");
+          pub = base({ phase: "fail", chapter: c, step: miniIdx("mist"), fire: 0, flags: { belofte: "ja", bijl: "takken", kleed: "kachel", kist: "hout", mist: "gekeken" }, checkpoint: { chapterIdx: c, fire: 3 }, runStats: runStats({ fails: 1, fireMin: 0 }) });
+          break;
+        }
+        case "ending-legende": case "ending-nippertje": {
+          const eid = id === "ending-legende" ? "legende" : "nippertje";
+          const e = ST.endings.find((x) => x.id === eid);
+          const fire = eid === "legende" ? 9 : 2;
+          const minis = ["blaasbalg", "bijl", "vonken", "slot", "echo", "snel", "verhaal"].map((m, i) => ({ chapter: i, id: m, difficulty: 1 + (i % 3), logs: eid === "legende" ? [3, 4, 2, 3, 2, 3, 2][i] : [1, -1, 2, 0, -1, 1, 2][i], verdict: null, mvp: pids[i % pids.length] }));
+          minis.forEach((m) => { m.verdict = m.logs >= 2 ? "win" : m.logs >= 0 ? "meh" : "lose"; });
+          const mvpCounts = {}; minis.forEach((m) => { mvpCounts[m.mvp] = (mvpCounts[m.mvp] || 0) + 1; });
+          pub = base({ phase: "ending", chapter: ST.chapters.length - 1, step: 0, fire, ending: Object.assign(JSON.parse(JSON.stringify(e)), { fire }),
+            flags: { belofte: "ja", bijl: "grote", kleed: "deur", kist: "hout", mist: "dicht", aanbod: "nee", fles: "later" },
+            runStats: runStats({ ending: eid, endedAt: now, fireAtDawn: fire, minis, mvpCounts, fails: eid === "legende" ? 0 : 1, flips: 1 }) });
+          break;
+        }
+        case "arcade-pick": {
+          game = "arcade";
+          pub = { v: 1, game: "arcade", code: "VUUR", hostPid: "p1", phase: "pick", updatedAt: now, players: players.map((p) => Object.assign({}, p)), scores: { p1: 7, p2: 9, p3: 4 }, acks: {}, removed: [],
+            settings: { difficulty: 2 }, fire: 6, maxFire: 10, mini: null, miniResult: null, lastMini: { id: "vonken", nonce: 3 }, active: pids,
+            stats: { arcade: { records: { bijl: { best: 3, plays: 4, last: 2 }, vonken: { best: 2, plays: 2, last: 2 }, snel: { best: 1, plays: 1, last: 1 } } } } };
+          break;
+        }
+        case "arcade-result": {
+          game = "arcade";
+          const r = result("vonken", 2, 777, 5, (sc) => Object.assign(sc, { logs: Math.max(2, sc.logs) }));
+          r.nonce = 3; r.mvp = r.mvp || "p1";
+          const points = {}; pids.forEach((p) => { points[p] = Math.max(0, r.logs) + (p === r.mvp ? 1 : 0); });
+          Object.assign(r, { points, record: true, best: r.logs });
+          pub = { v: 1, game: "arcade", code: "VUUR", hostPid: "p1", phase: "miniResult", updatedAt: now, players: players.map((p) => Object.assign({}, p)), scores: { p1: 7 + points.p1, p2: 9 + points.p2, p3: 4 + (points.p3 || 0) }, acks: {}, removed: [],
+            settings: { difficulty: 2 }, fire: r.fireAfter, maxFire: 10, mini: null, miniResult: r, lastMini: { id: "vonken", nonce: 3 }, active: pids,
+            stats: { arcade: { records: { bijl: { best: 3, plays: 4, last: 2 }, vonken: { best: r.logs, plays: 3, last: r.logs } } } } };
+          break;
+        }
+        default:
+          pub = base({ phase: "title" });
+      }
+
+      // Nep-"host": acties werken op de fixture, zodat je knoppen kunt uitproberen.
+      const api = { send(t, d) {
+        console.log("[preview] send", t, d);
+        if (t === "ready" && !pub.ready.includes(mePid)) pub.ready = pub.ready.concat(mePid);
+        else if (t === "vote" && !pub.voted.includes(mePid)) { pub.voted = pub.voted.concat(mePid); priv = Object.assign({}, priv, { vote: d.option }); }
+        else if (t === "mini" && d && d.k === "result" && pub.mini) pub.mini = Object.assign({}, pub.mini, { submitted: pub.mini.submitted.concat(mePid) });
+        else return;
+        pub = Object.assign({}, pub, { updatedAt: Date.now() });
+        render();
+      } };
+      const stage = document.getElementById("stage");
+      function render() { (game === "arcade" ? DVArcadeUI : DVStoryUI).render(stage, { pub, priv, me, players, api, debug }); }
+      window.__preview = { get pub() { return pub; }, set(over) { pub = Object.assign({}, pub, over); render(); }, render, me, players };
+      render();
+    })();
+  </script>
+</body>
+</html>

@@ -1,26 +1,40 @@
 /*
- * Infiltrant online — schermen, host-loop en client-sessie (Dikke Vette App v2). Alleen browser.
- * Gebruikt window.DVA (app.js), DVInfiltrant (engine.js), DVNet (net.js), DV_WORDCATS/DV_WORDPAIRS (words.js), qrcode.
+ * Samen spelen — schermen, host-loop en client-sessie (Dikke Vette App v3). Alleen browser.
+ * Gebruikt window.DVA (app.js), de engines DVInfiltrant (engine.js), DVStory (story-engine.js) en DVArcade (arcade.js),
+ * DVRoom (room.js, carry bij een spelwissel), DVNet (net.js), DV_WORDCATS/DV_WORDPAIRS (words.js), qrcode, en de
+ * spel-UI's DVStoryUI (story-ui.js) en DVArcadeUI (arcade-ui.js).
  *
- * Schermen: #online (profiel + kamer maken/meedoen + uitleg) en #room (rendert per state.phase).
+ * Schermen: #online (profiel + kamer maken/meedoen + uitleg) en #room (rendert per pub.game en pub.phase).
+ *   Eén kamer, drie spellen: de host kiest in de lobby (spelkiezer). Wisselen = nieuwe engine-state via
+ *   DVRoom.carryFrom(oude state), zodat spelers, keys, acks (seq loopt door), scores, removed en stats meegaan.
+ *   De publieke state heeft altijd `game` ("infiltrant" | "story" | "arcade"); een state zonder `game` is Infiltrant (v2).
  *
  * Lagen
  *   Controller (C + functies hieronder): sessie `dva:session`, outbox + retransmit elke 1500 ms (client),
- *     host-loop met de volledige engine-state in `dva:hostRoom` (publiceert publicView + gewijzigde privateViews),
- *     presence, wake lock, auto-resume na herladen.
+ *     host-loop met de volledige engine-state in `dva:hostRoom` (publiceert publicView + gewijzigde privateViews,
+ *     generiek over de engines: reduce/publicView/privateView met ctx = { rng, now, words, story, minis }),
+ *     presence, wake lock, auto-resume na herladen. Instellingen per spel in `dva:hostSettings:<game>`,
+ *     laatst gekozen spel in `dva:hostGame`.
  *   Render: renderRoom(vm) met vm = { pub, priv, me:{pid,key,isHost}, status, presence, host:{pendingWinner}|null,
  *     ended, pending:Set(t) }. Elke fase is een view { el, update(vm), mounted?(), destroy?() } die alleen opnieuw
- *     wordt gebouwd als viewKey(vm) verandert (dan met View Transition); anders alleen update().
+ *     wordt gebouwd als viewKey(vm) verandert (dan met View Transition); anders alleen update(). Infiltrant heeft
+ *     hier zijn eigen views; Vuurwacht en de arcade worden in één view aan DVStoryUI.render / DVArcadeUI.render gegeven.
+ *   Eén-knop-start: de home-knop "Speel samen" zet sessionStorage dva:autocreate; #online maakt dan meteen een kamer
+ *     (of vraagt eerst één keer je naam). Een deellink zonder profiel vraagt ook alleen je naam en gaat de lobby in.
  *   Preview: met ?preview=<fase> laadt dit bestand online/preview.js, die DVOnline.preview(vm) aanroept (geen netwerk).
  *
  * Stabiele selectors (voor e2e-tests)
  *   #online  [data-act=name] (input), [data-act=avatar][data-v], [data-act=color][data-v], [data-act=create],
- *            [data-act=code] (4 inputs), [data-act=join], [data-act=resume]
- *   #room    section[data-screen=room][data-phase=<fase>|connecting|ended], [data-room-code] (tekst = code),
- *            [data-act=start|share|leave|seen|peek|peek-card|hint-input|hint-send|hint-aloud|skip|force-vote|
+ *            [data-act=code] (4 inputs), [data-act=join], [data-act=resume], [data-act=quick-name] + [data-act=quick-go]
+ *            (snelstart: één naamveld na "Speel samen" of een deellink zonder profiel)
+ *   #room    section[data-screen=room][data-phase=<fase>|connecting|ended][data-game=infiltrant|story|arcade],
+ *            [data-room-code] (tekst = code), lobby: [data-act=game][data-v=story|arcade|infiltrant] (spelkiezer),
+ *            [data-act=seg-difficulty][data-v] (Vuurwacht/arcade), [data-act=start|share|leave|end],
+ *            Infiltrant: [data-act=seen|peek|peek-card|hint-input|hint-send|hint-aloud|skip|force-vote|
  *            vote-pick (+data-pid)|vote-submit|close-vote|hints-sheet|guess-input|guess-send|next|again|to-lobby|
- *            exit|player (+data-pid)|kick|confirm|cancel|mode|seg-*|cat], [data-word] (geheime woord op de kaart)
- *   window.DVOnline.debug() → { pub, priv, me, status, outbox, presence }
+ *            exit|player (+data-pid)|kick|confirm|cancel|mode|seg-*|cat], [data-word] (geheime woord op de kaart);
+ *            Vuurwacht/arcade: zie online/story-ui.js en online/arcade-ui.js (data-act=ready|vote|next|retry|skipMini|pick).
+ *   window.DVOnline.debug() → { pub, priv, me, game, status, outbox, presence }
  *   window.DVOnline.preview(vm) → render het kamerscherm met een vaste vm (alleen bij ?preview); DVOnline.qrSvg(text) → <svg>
  *
  * Preview (design-QA): ?preview=lobby|lobby-host|lobby-wait|reveal|reveal-blind-infiltrant|hints|hints-myturn|vote|
@@ -34,6 +48,21 @@
   const N = window.DVNet;
   if (!DVA || !E || !N) { console.error("online/ui.js: DVA, DVInfiltrant of DVNet ontbreekt"); return; }
   const { $, store, toast, confetti, hooks } = DVA;
+  // De spellen in de kamer, elk met een pure engine (zelfde contract als DVInfiltrant). Een engine die niet geladen is,
+  // staat niet in de kiezer; Infiltrant is er altijd.
+  const GAMES = [
+    { id: "story", E: window.DVStory, e: "🔥", t: "Vuurwacht", kind: "Verhaal", min: 2, max: 6, time: "±30 min", tip: "Aanbevolen voor 2",
+      d: "Een nacht lang het vuur brandend houden: scènes, keuzes en minigames." },
+    { id: "arcade", E: window.DVArcade, e: "🎮", t: "Minigames", kind: "Arcade", min: 1, max: 6, time: "±2 min per spel",
+      d: "Losse spelletjes: hakken, blazen, vonken vangen, samen raden. Met records." },
+    { id: "infiltrant", E: window.DVInfiltrant, e: "🕵️", t: "Infiltrant", kind: "Bluffen", min: 3, max: 12, time: "±10 min per potje",
+      d: "Iedereen krijgt hetzelfde woord, behalve één. Hints, stemmen, ontmaskeren." },
+  ].filter((g) => g.E && typeof g.E.createState === "function");
+  const GAME = Object.fromEntries(GAMES.map((g) => [g.id, g]));
+  const gameOf = (st) => (st && typeof st.game === "string" && GAME[st.game] ? st.game : "infiltrant");
+  const engOf = (game) => (GAME[game] || GAME.infiltrant).E;
+  const DEFAULT_GAME = GAME.story ? "story" : "infiltrant";
+  const ROOM_MAX = (window.DVRoom && window.DVRoom.MAX_PLAYERS) || E.MAX_PLAYERS;
   const active = () => !navigator.userActivation || navigator.userActivation.hasBeenActive;
   const buzz = (p) => { if (active()) DVA.buzz(p); };
   const beep = (...a) => { if (active()) DVA.beep(...a); };
@@ -45,7 +74,8 @@
 
   const AVATARS = ["😎", "🤠", "🥸", "🤡", "👽", "🤖", "👻", "💀", "😈", "🧙", "🦊", "🐸",
     "🐼", "🐯", "🦁", "🐙", "🦄", "🐵", "🐷", "🐔", "🦖", "🍕", "🌮", "🔥"];
-  const NEON = ["#ff2e93", "#ff8a00", "#ffe03d", "#9dff3d", "#00e0a4", "#22e6ff", "#5a8bff", "#8b5cff"];
+  // Spelerskleuren uit het vuurpalet (SPEC-2 §A): gloed, vlam, heet rood, het blauwe vlammetje, hout, as…
+  const NEON = ["#ff6a1a", "#ffc247", "#e8401c", "#5aa9ff", "#c98f5a", "#ffe7b8", "#ff9a3c", "#8a5a36"];
   const HOST_TTL = 12 * 3600e3;
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const pick = (a) => a[Math.floor(Math.random() * a.length)];
@@ -187,10 +217,17 @@
   const C = { session: null, room: null, status: "idle", pub: null, priv: null, presence: {}, outbox: [], host: null, ended: null, since: 0, leaving: false };
   let retxIv = null, retryT = null, unsubs = [], opening = null;
   const sentAt = new Map(); // seq → laatste verzendtijd (alleen in geheugen)
-  // Engine-context van de host: echte tijd, de woordenlijst en een crypto-rng (rollen en woorden eerlijk verdeeld).
+  // Engine-context van de host: echte tijd, de woordenlijst, het verhaal en de minigame-registry, en een crypto-rng
+  // (rollen, woorden en muntworpen eerlijk verdeeld).
   const u32 = new Uint32Array(1);
   const rng = () => { try { crypto.getRandomValues(u32); return u32[0] / 4294967296; } catch (e) { return Math.random(); } };
-  const ectx = () => ({ rng, now: Date.now(), words: window.DV_WORDPAIRS });
+  const ectx = () => ({ rng, now: Date.now(), words: window.DV_WORDPAIRS, story: window.DV_STORY, minis: window.DVMini });
+  const settingsKey = (game) => "hostSettings:" + game;
+  // Nieuwe engine-state voor een spel; `carry` (DVRoom.carryFrom) bij een spelwissel in de lobby.
+  function newState(game, { code, host, carry, now }) {
+    const saved = store.get(settingsKey(game), game === "infiltrant" ? store.get("hostSettings", undefined) : undefined);
+    return engOf(game).createState({ code, host, settings: saved || undefined, carry: carry || undefined, now });
+  }
 
   function saveSession() {
     if (!C.session) return;
@@ -204,8 +241,9 @@
   }
   function setStatus(s) { if (C.status !== s) { C.status = s; emit(); } }
   function hostDerive() {
-    C.pub = E.publicView(C.host.state);
-    C.priv = E.privateView(C.host.state, C.session.pid);
+    const st = C.host.state, eng = engOf(gameOf(st));
+    C.pub = eng.publicView(st);
+    C.priv = eng.privateView(st, C.session.pid, ectx());
   }
 
   function openRoom(s) {
@@ -252,16 +290,34 @@
   // ---------- Host ----------
   function hostReceive(env) {
     if (!C.host || !env) return;
-    let next;
-    try { next = E.reduce(C.host.state, env, ectx()); } catch (e) { console.error(e); return; }
-    if (next === C.host.state) return;
     const prev = C.host.state;
+    let next;
+    try { next = engOf(gameOf(prev)).reduce(prev, env, ectx()); } catch (e) { console.error(e); return; }
+    if (next === prev) return;
+    if (JSON.stringify(prev.settings) !== JSON.stringify(next.settings)) store.set(settingsKey(gameOf(next)), next.settings);
+    hostCommit(next, false);
+  }
+  // Nieuwe host-state vastleggen: afleiden, bewaren, publiceren (force = ook ongewijzigde privé-views opnieuw/legen).
+  function hostCommit(next, force) {
     C.host.state = next;
     hostDerive();
     saveHost();
-    if (JSON.stringify(prev.settings) !== JSON.stringify(next.settings)) store.set("hostSettings", next.settings);
-    if (C.room) { C.room.publishState(C.pub); hostPublishPrivates(false); }
+    if (C.room) { C.room.publishState(C.pub); hostPublishPrivates(force); }
     emit();
+  }
+  // Spelwissel in de lobby (host): nieuwe engine-state met carry, zodat iedereen blijft zitten en seq/acks doorlopen.
+  function switchGame(game) {
+    const s = C.session, h0 = C.host;
+    if (!s || !s.isHost || !h0 || !GAME[game] || !window.DVRoom) return false;
+    const st = h0.state;
+    if (st.phase !== "lobby" || gameOf(st) === game) return false;
+    const me = P(st, s.pid) || getProfile();
+    const host = { pid: s.pid, key: s.key, name: me.name, avatar: me.avatar, color: me.color };
+    let next;
+    try { next = newState(game, { code: st.code, host, carry: window.DVRoom.carryFrom(st), now: Date.now() }); } catch (e) { console.error(e); return false; }
+    store.set("hostGame", game);
+    hostCommit(next, true);
+    return true;
   }
   function hostPublishAll() {
     if (!C.room || !C.host) return;
@@ -269,11 +325,11 @@
     hostPublishPrivates(true);
   }
   function hostPublishPrivates(force) {
-    const st = C.host.state, last = C.host.lastPriv;
+    const st = C.host.state, last = C.host.lastPriv, eng = engOf(gameOf(st)), ctx = ectx();
     for (const pid of Object.keys(st.keys)) {
       if (pid === st.hostPid) continue;
       const key = st.keys[pid];
-      const view = E.privateView(st, pid);
+      const view = eng.privateView(st, pid, ctx);
       const json = view ? JSON.stringify(view) : null;
       if (!force && last[key] === json) continue;
       if (view) C.room.publishPrivate(key, view);
@@ -335,7 +391,8 @@
   async function createRoom(prof) {
     const claim = await N.claimCode({});
     const pid = N.randomId(12), key = N.randomId(16);
-    const state = E.createState({ code: claim.code, host: Object.assign({ pid, key }, prof), settings: store.get("hostSettings", undefined), now: Date.now() });
+    const game = GAME[store.get("hostGame", DEFAULT_GAME)] ? store.get("hostGame", DEFAULT_GAME) : DEFAULT_GAME;
+    const state = newState(game, { code: claim.code, host: Object.assign({ pid, key }, prof), now: Date.now() });
     C.session = { code: claim.code, pid, key, seq: 0, brokerIndex: claim.brokerIndex, brokerUrl: claim.brokerUrl, isHost: true, outbox: [] };
     C.host = { state, lastPriv: {} };
     C.outbox = []; C.ended = null; C.presence = {};
@@ -384,6 +441,7 @@
       if (C.session && C.session.isHost) drop("hostRoom");
       drop("session");
       Object.assign(C, { session: null, host: null, pub: null, priv: null, presence: {}, outbox: [], ended: null });
+      resetStage(); // de kamer is verlaten: spel-view (vuur-canvassen, timers) opruimen
     }
     C.status = "idle";
     if (room) await room.close();
@@ -412,7 +470,7 @@
   async function closeRoom() {
     const h0 = C.host;
     if (h0 && C.room) {
-      const closed = Object.assign(E.publicView(h0.state), { phase: "closed", updatedAt: Date.now() });
+      const closed = Object.assign(engOf(gameOf(h0.state)).publicView(h0.state), { phase: "closed", updatedAt: Date.now() });
       const jobs = [C.room.publishState(closed)];
       for (const pid of Object.keys(h0.state.keys)) if (pid !== h0.state.hostPid) jobs.push(C.room.clearPrivate(h0.state.keys[pid]));
       await Promise.race([Promise.all(jobs), sleep(2500)]);
@@ -440,7 +498,14 @@
   function vm() {
     if (PREVIEW) return previewVm;
     const s = C.session;
-    const priv = C.priv && C.pub && C.priv.gameNo === C.pub.gameNo ? C.priv : null; // nooit het woord van vorig potje
+    // Privé-payload alleen als die bij het huidige spel hoort: nooit het woord van vorig potje (Infiltrant) of de
+    // minigame-view van een vorige minigame (Vuurwacht/arcade: zelfde spel én nonce).
+    let priv = null;
+    if (C.priv && C.pub) {
+      const game = gameOf(C.pub);
+      if (game === "infiltrant") priv = C.priv.gameNo === C.pub.gameNo && !C.priv.game ? C.priv : null;
+      else priv = C.priv.game === game && C.pub.mini && C.priv.nonce === C.pub.mini.nonce ? C.priv : null;
+    }
     return {
       pub: C.pub, priv, me: { pid: s ? s.pid : null, key: s ? s.key : null, isHost: !!(s && s.isHost), code: s ? s.code : null },
       status: C.status, presence: C.presence, host: C.host ? { pendingWinner: C.host.state.pendingWinner || null } : null,
@@ -465,11 +530,13 @@
   function effects(v) {
     const p = v.pub;
     if (!p) return;
-    const now = { phase: p.phase, n: p.players.filter((x) => !x.left).length, turn: p.turn ? p.turn.pid + ":" + p.turn.hintRound + ":" + p.round : null, revote: p.revote, g: p.gameNo };
+    const game = gameOf(p), inf = game === "infiltrant";
+    const now = { game, phase: p.phase, n: p.players.filter((x) => !x.left).length, turn: inf && p.turn ? p.turn.pid + ":" + p.turn.hintRound + ":" + p.round : null, revote: !!p.revote, g: p.gameNo };
     const was = fxPrev;
     fxPrev = now;
     if (!was || v.ended) return;
     if (now.phase === "lobby" && was.phase === "lobby" && now.n > was.n) { sfx.pop(); buzz(10); }
+    if (!inf || was.game !== game) return; // Vuurwacht en de arcade maken hun eigen geluid (DVStoryUI)
     if (now.phase !== was.phase) {
       if (now.phase === "reveal") { sfx.whoosh(); buzz(25); }
       if (now.phase === "vote") { sfx.alarm(); buzz([30, 50, 30]); }
@@ -494,11 +561,11 @@
   };
 
   function avatar(p, size) {
-    return h("span", { class: "o-av o-av-" + (size || "md"), style: { "--pc": (p && p.color) || "#8b5cff" }, "aria-hidden": "true" },
+    return h("span", { class: "o-av o-av-" + (size || "md"), style: { "--pc": (p && p.color) || "#c98f5a" }, "aria-hidden": "true" },
       h("span", { class: "o-av-e", text: (p && p.avatar) || "🙂" }));
   }
   function setAvatar(el, p) {
-    el.style.setProperty("--pc", p.color || "#8b5cff");
+    el.style.setProperty("--pc", p.color || "#c98f5a");
     const e = el.firstChild;
     if (e.textContent !== p.avatar) e.textContent = p.avatar || "🙂";
   }
@@ -532,9 +599,9 @@
   }
   async function shareLink(code, bi) {
     const url = shareUrl(code, bi);
-    const text = `Doe mee met Infiltrant! 🕵️ Kamercode ${code}`;
+    const text = `Kom erbij, bij het vuur! 🔥 Kamercode ${code}`;
     if (navigator.share) {
-      try { await navigator.share({ title: "Infiltrant", text, url }); return; } catch (e) { if (e && e.name === "AbortError") return; }
+      try { await navigator.share({ title: "Samen spelen", text, url }); return; } catch (e) { if (e && e.name === "AbortError") return; }
     }
     try { await navigator.clipboard.writeText(url); toast("Link gekopieerd 📋"); return; } catch (e) { /* fallback hieronder */ }
     const ta = h("textarea", { style: { position: "fixed", opacity: "0" } }); ta.value = url;
@@ -571,18 +638,19 @@
     }
     const svg = sv("svg", { viewBox: `-2 -2 ${n + 4} ${n + 4}`, class: "o-qr-svg", role: "img", "aria-label": "QR-code om mee te doen" });
     const defs = sv("defs");
+    // Houtskool-modules met een ember-gloed op de zoekers en het embleem (dezelfde kleuren als online.css).
     const grad = sv("linearGradient", { id: gid, x1: "0", y1: "0", x2: "1", y2: "1" },
-      sv("stop", { offset: "0", "stop-color": "#7a3cff" }), sv("stop", { offset: "1", "stop-color": "#ff2e93" }));
+      sv("stop", { offset: "0", "stop-color": "#e8401c" }), sv("stop", { offset: "1", "stop-color": "#ff9a3c" }));
     defs.append(grad);
-    svg.append(defs, sv("path", { d, fill: "#170b2b" }));
+    svg.append(defs, sv("path", { d, fill: "#2a1208" }));
     [[0, 0], [0, n - 7], [n - 7, 0]].forEach(([r, c]) => {
       svg.append(sv("rect", { x: c + 0.5, y: r + 0.5, width: 6, height: 6, rx: 1.5, fill: "none", stroke: `url(#${gid})`, "stroke-width": 1 }));
-      svg.append(sv("rect", { x: c + 2, y: r + 2, width: 3, height: 3, rx: 0.7, fill: "#170b2b" }));
+      svg.append(sv("rect", { x: c + 2, y: r + 2, width: 3, height: 3, rx: 0.7, fill: "#2a1208" }));
     });
     const lp = lo - 0.2, ls = logo + 0.4;
     svg.append(sv("rect", { x: lp, y: lp, width: ls, height: ls, rx: 1.6, fill: `url(#${gid})` }));
     const t = sv("text", { x: n / 2, y: n / 2 + logo * 0.06, "text-anchor": "middle", "dominant-baseline": "central", "font-size": logo * 0.62 });
-    t.textContent = "🕵️";
+    t.textContent = "🔥";
     svg.append(t);
     return svg;
   }
@@ -687,26 +755,34 @@
       ]);
     });
   }
-  // Kamer-sheet (tik op de code in de balk): QR + delen + spelers (host kan iemand eruit zetten)
+  // Kamer-sheet (tik op de code in de balk): QR + delen + spelers (host kan iemand eruit zetten; in Vuurwacht/arcade
+  // kan de host ook terug naar de lobby)
   function roomSheet(v) {
     sheet((panel, close) => {
-      const pub = v.pub;
+      const pub = v.pub, game = gameOf(pub);
       const list = h("div", { class: "o-rs-list" });
       activeP(pub).forEach((p) => {
         const row = h("div", { class: "o-rs-row" }, avatar(p, "sm"), h("span", { class: "o-rs-name", text: p.name }),
           p.pid === pub.hostPid && h("span", { class: "o-tag", text: "👑 host" }),
           p.pid === v.me.pid && h("span", { class: "o-tag o-tag-me", text: "jij" }),
-          !p.alive && pub.phase !== "lobby" && h("span", { class: "o-tag", text: p.spectator ? "kijkt mee" : "eruit" }));
+          pub.phase !== "lobby" && (p.spectator || (game === "infiltrant" && !p.alive)) && h("span", { class: "o-tag", text: p.spectator ? "kijkt mee" : "eruit" }));
         if (v.me.isHost && p.pid !== v.me.pid) row.append(btn("Eruit", "player", "o-btn-mini", () => { close(); playerSheet(v, p); }, { "data-pid": p.pid }));
         list.append(row);
       });
+      const canEnd = v.me.isHost && game !== "infiltrant" && pub.phase !== "lobby";
       add(panel, [
         h("p", { class: "o-kicker", text: "Kamercode" }),
         codeTiles(pub.code, "sm"),
         h("div", { class: "o-rs-qr" }, h("div", { class: "o-qr" }, qrSvg(shareUrl(pub.code, v.brokerIndex))),
-          h("p", { class: "o-sheet-text", text: "Laat iemand scannen om mee te doen. Tijdens een potje kijken nieuwe spelers mee tot het volgende potje." })),
+          h("p", { class: "o-sheet-text", text: "Laat iemand scannen om mee te doen. Tijdens een spel kijken nieuwe spelers mee tot de volgende ronde." })),
         btn([icon("share"), " Deel link"], "share", "o-btn-glass o-btn-wide", () => shareLink(pub.code, v.brokerIndex)),
         h("h4", { class: "o-h4", text: "Spelers" }), list,
+        canEnd && h("h4", { class: "o-h4", text: GAME[game].t }),
+        canEnd && btn("Terug naar de lobby", "end", "o-btn-glass o-btn-wide", async () => {
+          close();
+          const ok = await ask({ emoji: "🏕️", title: "Terug naar de lobby?", text: game === "story" ? "Het verhaal stopt hier. Jullie kunnen later opnieuw beginnen; de stand blijft bewaard." : "De arcade stopt. De punten blijven staan.", ok: "Naar de lobby" });
+          if (ok) { sfx.tap(); act("end"); }
+        }),
       ]);
     });
   }
@@ -786,6 +862,11 @@
   let cur = { key: null, view: null, name: null };
   let vtBusy = false;
   let latest = null;
+  function resetStage() {
+    if (cur.prev && cur.prev.destroy) { try { cur.prev.destroy(); } catch (e) { console.error(e); } }
+    cur = { key: null, view: null, name: null };
+    if (shell) shell.stage.replaceChildren();
+  }
   // Een verse fase is heel even niet aan te tikken. Anders landt een dubbele tik op de vorige knop op de nieuwe
   // knop op dezelfde plek ("Uitslag" → "Nog een potje", "Volgende ronde" → "Nu stemmen"). Vooral zonder
   // View Transitions (iOS < 18, minder beweging) wisselt het scherm meteen en raakt de tweede tik de nieuwe fase.
@@ -807,16 +888,19 @@
     if (v.ended) return { name: "ended", key: "ended:" + v.ended };
     const pub = v.pub;
     if (!pub) return { name: "connecting", key: "connecting" };
+    const game = gameOf(pub);
+    if (pub.phase === "closed") return { name: "ended", key: "ended:closed" };
+    if (pub.phase === "lobby") return { name: "lobby", key: `lobby:${v.me.isHost ? 1 : 0}:${game}` };
+    // Vuurwacht en de arcade: één view voor het hele spel, DVStoryUI/DVArcadeUI wisselen zelf per stap
+    if (game !== "infiltrant") return { name: VIEWS[game] ? game : "connecting", key: game };
     const g = pub.gameNo, r = pub.round;
     switch (pub.phase) {
-      case "lobby": return { name: "lobby", key: "lobby:" + (v.me.isHost ? 1 : 0) };
       case "reveal": return { name: "reveal", key: `reveal:${g}:${playing(v) ? 1 : 0}` };
       case "hints": return { name: "hints", key: `hints:${g}:${r}` };
       case "vote": return { name: "vote", key: `vote:${g}:${r}:${pub.revote ? 1 : 0}:${voteMode(v)}` };
       case "guess": return { name: "guess", key: `guess:${g}:${r}` };
       case "elim": return { name: "elim", key: `elim:${g}:${r}:${pub.lastVote && pub.lastVote.revote ? 1 : 0}` };
       case "over": return { name: "over", key: `over:${g}` };
-      case "closed": return { name: "ended", key: "ended:closed" };
       default: return { name: "connecting", key: "connecting" };
     }
   }
@@ -835,7 +919,13 @@
     const sh = ensureShell();
     updateChrome(v);
     const { name, key } = pickView(v);
-    if (key === cur.key) { if (cur.view) cur.view.update(v); return; }
+    // Fase/spel/sfeer op de sectie (CSS-tinten en e2e): bij elke render, want Vuurwacht/arcade wisselen van fase binnen één view
+    const mark = (lv) => {
+      sh.section.dataset.phase = name === "ended" || name === "connecting" ? name : lv.pub.phase;
+      sh.section.dataset.game = lv.pub ? gameOf(lv.pub) : "";
+      sh.section.dataset.mood = mood(lv);
+    };
+    if (key === cur.key) { if (cur.view) { mark(v); cur.view.update(v); } return; }
     cur.key = key;
     cur.view = null;
     const apply = () => {
@@ -844,8 +934,7 @@
       if (cur.prev && cur.prev.destroy) cur.prev.destroy();
       const view = VIEWS[name](lv);
       cur.view = view; cur.prev = view; cur.name = name;
-      sh.section.dataset.phase = name === "ended" || name === "connecting" ? name : lv.pub.phase;
-      sh.section.dataset.mood = mood(lv);
+      mark(lv);
       sh.stage.replaceChildren(view.el);
       guardTaps(sh.stage);
       view.update(lv);
@@ -870,13 +959,35 @@
   // =========================================================
   const VIEWS = {};
 
+  // ---------- Vuurwacht en arcade: één view voor het hele spel, de spel-UI wisselt zelf per stap ----------
+  function gameView(UI, label) {
+    return () => {
+      const el = h("div", { class: "o-view o-game" });
+      if (!UI || typeof UI.render !== "function") {
+        el.append(h("p", { class: "o-center-text", text: `${label} is niet geladen. Herlaad de app en probeer het nog eens.` }));
+        return { el, update() {} };
+      }
+      const api = { send: (t, d) => act(t, d) };
+      return {
+        el,
+        update(v) {
+          try { UI.render(el, { pub: v.pub, priv: v.priv, me: { pid: v.me.pid, isHost: v.me.isHost }, players: v.pub.players, api }); }
+          catch (e) { console.error(e); } // één kapotte stap mag de kamer (balk, verlaten, volgende state) niet blokkeren
+        },
+        destroy() { try { UI.destroy(el); } catch (e) { console.error(e); } },
+      };
+    };
+  }
+  VIEWS.story = gameView(window.DVStoryUI, "Vuurwacht");
+  VIEWS.arcade = gameView(window.DVArcadeUI, "De arcade");
+
   // ---------- Verbinden ----------
   VIEWS.connecting = (v) => {
     const sub = h("p", { class: "o-center-text", text: "Even geduld, we zoeken je kamer op." });
     const stop = btn("Stoppen", "exit", "o-btn-glass", async () => { await teardown(true); location.hash = "online"; });
     stop.hidden = true;
     const el = h("div", { class: "o-view o-center" },
-      h("div", { class: "o-radar o-rise" }, h("i"), h("i"), h("i"), h("span", { text: "🕵️" })),
+      h("div", { class: "o-radar o-rise" }, h("i"), h("i"), h("i"), h("span", { text: "🔥" })),
       h("h2", { class: "o-title o-rise", style: { "--i": 1 }, text: "Verbinden…" }), sub, stop);
     const startedAt = Date.now();
     const t = setInterval(() => {
@@ -910,6 +1021,7 @@
   VIEWS.lobby = (v0) => {
     const isHost = v0.me.isHost;
     const code = v0.pub.code;
+    const game = gameOf(v0.pub), G = GAME[game];
     // Ticket: code + QR + delen
     const qrBox = h("div", { class: "o-qr" });
     let qrFor = null;
@@ -934,18 +1046,19 @@
       else if (v.me.isHost) playerSheet(v, p);
       else restart(b.querySelector(".o-av"), "o-bounce");
     });
-    const players = h("section", { class: "o-glass o-card o-rise", style: { "--i": 1 } },
+    const players = h("section", { class: "o-glass o-card o-rise", style: { "--i": 2 } },
       h("div", { class: "o-card-head" }, h("h3", { class: "o-h3", text: "Spelers" }), count), grid, need);
 
-    const conf = isHost ? settingsCard() : summaryCard();
+    const picker = gamePicker(isHost);
+    const conf = game === "infiltrant" ? (isHost ? settingsCard() : summaryCard()) : game === "story" ? storySettingsCard(isHost) : arcadeSettingsCard(isHost);
     const startSub = h("span", { class: "o-btn-sub" });
     const start = isHost ? h("button", { class: "o-btn o-btn-primary o-btn-hero", type: "button", "data-act": "start", onclick: () => {
-      const v = latest;
-      if (activeP(v.pub).length < E.MIN_PLAYERS) { shake(start); return; }
+      const v = latest, n = activeP(v.pub).length;
+      if (n < G.min || n > G.max) { shake(start); return; }
       sfx.whoosh(); buzz(20); act("start");
     } }, h("span", { class: "o-btn-l" }, icon("play"), h("span", { text: "Start" })), startSub) : null;
-    const dock = h("div", { class: "o-dock" }, isHost ? start : waitLine("Wachten tot de host start…"));
-    const el = h("div", { class: "o-view o-lobby" }, ticket, players, conf.el, dock);
+    const dock = h("div", { class: "o-dock" }, isHost ? start : waitLine(`Wachten tot de host ${G.t} start…`));
+    const el = h("div", { class: "o-view o-lobby" }, ticket, picker.el, players, conf.el, dock);
 
     return {
       el,
@@ -954,21 +1067,118 @@
         const link = shareUrl(pub.code, v.brokerIndex);
         if (qrFor !== link) { qrFor = link; qrBox.replaceChildren(qrSvg(link)); }
         const ps = activeP(pub);
-        count.textContent = ps.length + " / " + E.MAX_PLAYERS;
-        const missing = Math.max(0, E.MIN_PLAYERS - ps.length);
+        count.textContent = ps.length + " / " + G.max;
+        const missing = Math.max(0, G.min - ps.length), over = Math.max(0, ps.length - G.max);
         const slots = ps.concat(Array.from({ length: missing }, (_, i) => ({ pid: "ghost" + i, ghost: true })));
         keyed(grid, slots, (p) => p.pid, (p, i) => (p.ghost ? ghostCell(i) : playerCell(p, i)), (cell, p) => { if (!p.ghost) updateCell(cell, p, v); });
-        need.textContent = missing ? `Nog ${plural(missing, "speler", "spelers")} nodig om te starten` : ps.length >= E.MAX_PLAYERS ? "De kamer is vol 🔥" : "Klaar om te spelen! Er kunnen er nog meer bij.";
-        need.classList.toggle("ok", !missing);
+        need.textContent = missing ? `Nog ${plural(missing, "speler", "spelers")} nodig om te starten`
+          : over ? `${G.t} is voor hooguit ${G.max} spelers (nu ${ps.length}). Kies een ander spel of laat iemand meekijken.`
+            : ps.length >= G.max ? (G.max >= ROOM_MAX ? "De kamer is vol 🔥" : `Vol voor ${G.t} (${G.max} spelers). Klaar om te spelen!`)
+              : ps.length === 1 ? "Je kunt alleen beginnen, maar samen is leuker 🔥" : "Klaar om te spelen! Er kunnen er nog meer bij.";
+        need.classList.toggle("ok", !missing && !over);
+        picker.update(v);
         conf.update(v);
         if (start) {
-          start.classList.toggle("is-off", !!missing);
-          start.setAttribute("aria-disabled", missing ? "true" : "false");
-          startSub.textContent = missing ? `Nog ${plural(missing, "speler", "spelers")} nodig` : `${ps.length} spelers · ${plural(pub.infiltrantCount, "infiltrant", "infiltranten")}`;
+          const off = missing || over;
+          start.classList.toggle("is-off", !!off);
+          start.setAttribute("aria-disabled", off ? "true" : "false");
+          startSub.textContent = missing ? `Nog ${plural(missing, "speler", "spelers")} nodig` : over ? `Hooguit ${G.max} spelers` : startText(game, pub, ps.length);
         }
       },
     };
   };
+  function startText(game, pub, n) {
+    if (game === "infiltrant") return `${n} spelers · ${plural(pub.infiltrantCount, "infiltrant", "infiltranten")}`;
+    const d = pub.settings && pub.settings.difficulty;
+    if (game === "story") { const o = STORY_DIFF.find((x) => x.v === d) || STORY_DIFF[1]; return `${plural(n, "speler", "spelers")} · ${o.t.toLowerCase()} · ${GAME.story.time}`; }
+    const o = ARCADE_DIFF.find((x) => x.v === d) || ARCADE_DIFF[1];
+    return `${plural(n, "speler", "spelers")} · niveau ${o.t.toLowerCase()}`;
+  }
+  // Spelkiezer: de host kiest, de rest ziet de keuze live. Te weinig/te veel spelers → kaart uit, met de reden erbij.
+  function gamePicker(isHost) {
+    const cards = GAMES.map((g, i) => h("button", { class: "o-gm", type: "button", "data-act": "game", "data-v": g.id, style: { "--i": i }, "aria-pressed": "false", onclick: () => {
+      const v = latest;
+      if (!v || !v.me.isHost || gameOf(v.pub) === g.id) return;
+      const n = activeP(v.pub).length;
+      if (n < g.min) { toast(`${g.t} kan vanaf ${g.min} spelers`); return; }
+      if (n > g.max) { toast(`${g.t} is voor hooguit ${g.max} spelers`); return; }
+      sfx.tap(); buzz(8);
+      switchGame(g.id);
+    } },
+      h("span", { class: "o-gm-e", "aria-hidden": "true", text: g.e }),
+      h("span", { class: "o-gm-body" },
+        h("b", { class: "o-gm-t", text: g.t }),
+        h("span", { class: "o-gm-d", text: g.d }),
+        h("span", { class: "o-gm-meta" }, h("span", { class: "o-gm-n", text: `${g.min}–${g.max} spelers · ${g.time}` }), h("span", { class: "o-gm-badge" }))),
+      h("span", { class: "o-mode-check" }, icon("check"))));
+    const el = h("section", { class: "o-glass o-card o-rise", style: { "--i": 1 } },
+      h("div", { class: "o-card-head" }, h("h3", { class: "o-h3", text: "Wat spelen we?" }), h("span", { class: "o-count", text: isHost ? "jij kiest" : "de host kiest" })),
+      h("div", { class: "o-gms" }, cards));
+    return {
+      el,
+      update(v) {
+        const cur = gameOf(v.pub), n = activeP(v.pub).length;
+        cards.forEach((b) => {
+          const g = GAME[b.dataset.v], on = g.id === cur, few = n < g.min, many = n > g.max;
+          b.classList.toggle("on", on);
+          b.classList.toggle("is-off", !on && (few || many));
+          b.disabled = !v.me.isHost || on || few || many;
+          b.setAttribute("aria-pressed", on ? "true" : "false");
+          const badge = b.querySelector(".o-gm-badge");
+          badge.textContent = few ? `Vanaf ${g.min} spelers` : many ? `Tot ${g.max} spelers` : g.tip && n === 2 ? g.tip : "";
+          badge.classList.toggle("is-tip", !few && !many && !!badge.textContent);
+        });
+      },
+    };
+  }
+  const STORY_DIFF = [
+    { v: "chill", t: "Chill", d: "Rustige minigames, het vuur zakt langzamer tussen de uren" },
+    { v: "normaal", t: "Normaal", d: "Zoals het verhaal bedoeld is" },
+    { v: "pittig", t: "Pittig", d: "Zwaardere proeven, het vuur zakt sneller" },
+  ];
+  const ARCADE_DIFF = [
+    { v: 1, t: "Rustig", d: "Lekker instappen" },
+    { v: 2, t: "Stevig", d: "De normale stand" },
+    { v: 3, t: "Heet", d: "Voor wie records wil" },
+  ];
+  // Instellingen van Vuurwacht (moeilijkheid) — de host bepaalt, de rest leest mee
+  function storySettingsCard(isHost) {
+    const s = seg("difficulty", STORY_DIFF.map((o) => ({ v: o.v, t: o.t })), (x) => { if (isHost) setSettings({ difficulty: x }); }, "o-seg-wide");
+    const note = h("span", { class: "o-opt-note" });
+    const el = h("section", { class: "o-glass o-card o-rise", style: { "--i": 3 } },
+      h("div", { class: "o-card-head" }, h("h3", { class: "o-h3", text: "Vuurwacht" }), h("span", { class: "o-count", text: isHost ? "jij bepaalt" : "de host bepaalt" })),
+      h("p", { class: "o-blurb", text: "De langste nacht van het jaar. Hou het vuur (0–10 blokken) brandend tot de zon opkomt: lees de scènes in je eigen tempo, kies samen en speel elk uur een minigame. Op 0 is het vuur uit." }),
+      h("div", { class: "o-opt o-opt-col" }, h("span", { class: "o-opt-l" }, h("b", { text: "Hoe pittig?" }), note), s.el));
+    return {
+      el,
+      update(v) {
+        const d = v.pub.settings && v.pub.settings.difficulty;
+        s.set(d);
+        note.textContent = (STORY_DIFF.find((o) => o.v === d) || STORY_DIFF[1]).d;
+        s.el.querySelectorAll("button").forEach((b) => { b.disabled = !isHost; });
+      },
+    };
+  }
+  // Instellingen van de arcade (standaardniveau; de host kan het per minigame nog aanpassen)
+  function arcadeSettingsCard(isHost) {
+    const s = seg("difficulty", ARCADE_DIFF.map((o) => ({ v: o.v, t: o.t })), (x) => { if (isHost) setSettings({ difficulty: x }); }, "o-seg-wide");
+    const note = h("span", { class: "o-opt-note" });
+    const minis = window.DVMini ? window.DVMini.list() : [];
+    const el = h("section", { class: "o-glass o-card o-rise", style: { "--i": 3 } },
+      h("div", { class: "o-card-head" }, h("h3", { class: "o-h3", text: "Minigames" }), h("span", { class: "o-count", text: isHost ? "jij bepaalt" : "de host bepaalt" })),
+      h("p", { class: "o-blurb", text: "De host kiest telkens een minigame; iedereen speelt mee op z'n eigen telefoon. Punten en records blijven in de kamer staan." }),
+      minis.length ? h("div", { class: "o-minis" }, minis.map((m) => h("span", { class: "o-mini-chip", text: `${m.icon || "🎮"} ${m.title || m.id}` }))) : null,
+      h("div", { class: "o-opt o-opt-col" }, h("span", { class: "o-opt-l" }, h("b", { text: "Niveau" }), note), s.el));
+    return {
+      el,
+      update(v) {
+        const d = v.pub.settings && v.pub.settings.difficulty;
+        s.set(d);
+        note.textContent = (ARCADE_DIFF.find((o) => o.v === d) || ARCADE_DIFF[1]).d;
+        s.el.querySelectorAll("button").forEach((b) => { b.disabled = !isHost; });
+      },
+    };
+  }
   function ghostCell(i) {
     return h("div", { class: "o-pcell o-ghost", "data-pid": "ghost" + i, "data-ghost": "1", style: { "--i": i + 1 } },
       h("span", { class: "o-pcell-av" }, h("span", { class: "o-av o-av-lg o-av-ghost" }, h("span", { class: "o-av-e", text: "?" }))),
@@ -1000,9 +1210,9 @@
   }
 
   // Segmented control met schuivende pil
-  function seg(name, opts, onPick) {
+  function seg(name, opts, onPick, cls) {
     const btns = opts.map((o, i) => h("button", { class: "o-seg-b", type: "button", "data-act": "seg-" + name, "data-v": String(o.v), style: { "--i": i }, text: o.t, onclick: () => onPick(o.v) }));
-    const el = h("div", { class: "o-seg", role: "radiogroup", style: { "--n": opts.length } }, h("span", { class: "o-seg-thumb" }), btns);
+    const el = h("div", { class: "o-seg" + (cls ? " " + cls : ""), role: "radiogroup", style: { "--n": opts.length } }, h("span", { class: "o-seg-thumb" }), btns);
     return {
       el,
       set(val) {
@@ -1687,7 +1897,7 @@
         if (!confSeen.has(k)) {
           confSeen.add(k);
           setTimeout(() => {
-            confetti(burgers ? ["#2dffb3", "#9dff3d", "#22e6ff", "#ffffff", "#ffe03d"] : ["#ff3b5c", "#ff8a00", "#ff2e93", "#ffffff", "#8b5cff"], 200);
+            confetti(burgers ? ["#ffc247", "#ffe7b8", "#ff9a3c", "#fff6e6", "#5aa9ff"] : ["#e8401c", "#ff6a1a", "#5aa9ff", "#fff6e6", "#ffc247"], 200);
             fanfare(); buzz([40, 30, 40, 30, 160]);
           }, reduced() ? 0 : 450);
         }
@@ -1700,16 +1910,48 @@
   // #online — profiel, kamer maken, meedoen, uitleg
   // =========================================================
   let home = null, pendingJoin = null;
+  // Snelstart: één naamveld, dan meteen een kamer maken ("Speel samen" op de home) of meedoen (deellink zonder profiel).
+  function quickCard(mode, code) {
+    const join = mode === "join";
+    const input = h("input", {
+      class: "o-input o-quick-in", "data-act": "quick-name", maxlength: "16", placeholder: "Jouw naam", autocomplete: "nickname",
+      enterkeyhint: "go", "aria-label": "Jouw naam", spellcheck: "false",
+    });
+    const go = h("button", { class: "o-btn o-btn-primary o-btn-hero", type: "submit", "data-act": "quick-go" },
+      h("span", { class: "o-btn-l", text: join ? "Meedoen" : "🔥 Speel samen" }),
+      h("span", { class: "o-btn-sub", text: join ? `Kamer ${code} · ieder op z'n eigen telefoon` : "Jij maakt de kamer, de ander tikt op je link" }));
+    const form = h("form", { class: "o-quick-form", autocomplete: "off" }, input, go);
+    const more = h("button", { class: "o-link", type: "button", "data-act": "quick-more", text: "Liever eerst een avatar en kleur kiezen?", onclick: () => { sfx.tap(); if (home) home.quick(null); } });
+    const el = h("section", { class: "o-glass o-card o-quick o-rise" },
+      h("p", { class: "o-kicker", text: join ? `Uitgenodigd voor kamer ${code}` : "Nog één ding" }),
+      h("h3", { class: "o-quick-t", text: "Hoe heet je?" }),
+      h("p", { class: "o-quick-d", text: "Zo zien de anderen je bij het vuur." }),
+      form, more);
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const name = input.value.trim().slice(0, 16);
+      if (!name) { shake(input); input.focus(); return; }
+      setProfile({ name });
+      if (home) home.pe.set(getProfile());
+      sfx.tap();
+      if (join) await onJoin(code, pendingJoin && pendingJoin.code === code ? pendingJoin.b : undefined, go);
+      else await onCreate(go);
+    });
+    return { el, input };
+  }
   function buildHome(root) {
     const prof = getProfile();
     const hero = h("header", { class: "o-hero" },
-      h("div", { class: "o-emblem", "aria-hidden": "true" }, h("i", { class: "o-emblem-ring" }), h("i", { class: "o-emblem-core" }), h("span", { class: "o-emblem-e", text: "🕵️" })),
-      h("h1", { class: "o-brand", "data-text": "INFILTRANT" }, h("span", { text: "INFILTRANT" })),
-      h("p", { class: "o-tagline", text: "Eén van jullie liegt." }),
-      h("p", { class: "o-sub", text: "Online · ieder op z'n eigen telefoon · 3–12 spelers" }));
+      h("div", { class: "o-emblem", "aria-hidden": "true" }, h("i", { class: "o-emblem-ring" }), h("i", { class: "o-emblem-core" }), h("span", { class: "o-emblem-e", text: "🔥" })),
+      h("h1", { class: "o-brand o-brand-sm", "data-text": "SAMEN SPELEN" }, h("span", { text: "SAMEN SPELEN" })),
+      h("p", { class: "o-tagline", text: "Eén kamer, drie spellen. Ieder op z'n eigen telefoon." }),
+      h("div", { class: "o-teasers", role: "list", "aria-label": "De spellen" }, GAMES.map((g) => h("div", { class: "o-teaser", role: "listitem", "data-game": g.id },
+        h("span", { class: "o-teaser-e", "aria-hidden": "true", text: g.e }), h("b", { text: g.t }),
+        h("small", { text: g.id === "infiltrant" ? `vanaf ${g.min} spelers` : g.min === 1 ? "alleen of samen" : `voor ${g.min} tot ${g.max}` })))));
+    const quickBox = h("div", { class: "o-quick-box" });
     const resumeBox = h("div", { class: "o-resume-box" });
     const pe = profileEditor(prof, (p) => { setProfile(p); }, { open: !prof.name });
-    const profCard = h("section", { class: "o-glass o-card o-rise", style: { "--i": 1 } }, h("div", { class: "o-card-head" }, h("h3", { class: "o-h3", text: "Wie ben jij?" })), pe.el);
+    const profCard = h("section", { class: "o-glass o-card o-pe-card o-rise", style: { "--i": 1 } }, h("div", { class: "o-card-head" }, h("h3", { class: "o-h3", text: "Wie ben jij?" })), pe.el);
 
     const createB = h("button", { class: "o-btn o-btn-primary o-btn-hero", type: "button", "data-act": "create", onclick: () => onCreate(createB) },
       h("span", { class: "o-btn-l" }, h("span", { text: "Kamer maken" })), h("span", { class: "o-btn-sub", text: "Jij bent de host · vrienden scannen je QR" }));
@@ -1765,19 +2007,19 @@
       codebox, err, joinB);
 
     const STEPS = [
-      ["📱", "Maak een kamer", "Je vrienden scannen de QR of tikken op je link. Iedereen speelt op z'n eigen telefoon."],
-      ["🤫", "Bekijk je geheime woord", "Iedereen krijgt hetzelfde woord… behalve de infiltrant: die krijgt een ánder woord (of geen)."],
-      ["💬", "Geef om de beurt een hint", "Eén woord of korte zin. Te duidelijk? Dan weet de infiltrant het ook. Te vaag? Dan lijk jij verdacht."],
-      ["🗳️", "Stem wie de infiltrant is", "Ligt hij eruit, dan winnen de burgers. Blijft hij uit handen tot het einde, dan wint de infiltrant."],
+      ["📱", "Maak een kamer", "Tik op Speel samen. Je vrienden tikken op je link of scannen de QR; iedereen speelt op z'n eigen telefoon."],
+      ["🔥", "Kies een spel", "Vuurwacht: een verhaal met minigames, ideaal met z'n tweeën. Losse Minigames. Of Infiltrant, vanaf 3 spelers."],
+      ["🗣️", "Praat hardop", "Je telefoon laat alleen zien wat voor jou is. Wat je zegt, hoort de rest gewoon bij het vuur."],
+      ["🪵", "Hou het vuur brandend", "In Vuurwacht is het vuur jullie leven: minigames winnen voedt het, de nacht vreet eraan. Haal de zonsopgang."],
     ];
     const how = h("details", { class: "o-glass o-how o-rise", style: { "--i": 3 } },
       h("summary", { class: "o-how-s" }, h("span", { text: "Hoe werkt het?" }), h("i", { class: "o-how-chev" })),
       h("ol", { class: "o-how-l" }, STEPS.map(([e, t, d], i) => h("li", { class: "o-how-i" },
         h("span", { class: "o-how-n", text: String(i + 1) }), h("div", null, h("b", { text: e + " " + t }), h("p", { text: d }))))));
 
-    root.replaceChildren(hero, resumeBox, profCard, actions, how);
+    root.replaceChildren(hero, quickBox, resumeBox, profCard, actions, how);
     return {
-      pe, setCode, err, joinB, codebox, boxes,
+      pe, setCode, err, joinB, codebox, boxes, createB,
       refresh() {
         // Hervat-kaart als er nog een kamer loopt
         const s = liveSession();
@@ -1785,13 +2027,25 @@
         if (resumeBox.dataset.k !== k) {
           resumeBox.dataset.k = k;
           resumeBox.replaceChildren(k ? h("section", { class: "o-glass o-resume o-rise" },
-            h("div", { class: "o-resume-e", text: s.isHost ? "👑" : "🕵️" }),
+            h("div", { class: "o-resume-e", text: s.isHost ? "👑" : "🔥" }),
             h("div", { class: "o-resume-t" }, h("b", { text: "Je zit nog in kamer " + s.code }), h("small", { text: s.isHost ? "Jij bent de host" : "Spring er weer in" })),
             btn("Terug", "resume", "o-btn-primary o-btn-sm", () => { sfx.tap(); location.hash = "room"; })) : "");
         }
         pe.set(getProfile());
       },
+      // Snelstart-kaart tonen ("create" | "join") of weghalen (null); de rest van het scherm wijkt dan even
+      quick(mode, code) {
+        const k = mode ? mode + ":" + (code || "") : "";
+        if (quickBox.dataset.k === k) return;
+        quickBox.dataset.k = k;
+        quickBox.replaceChildren(mode ? quickCard(mode, code).el : "");
+        root.classList.toggle("is-quick", !!mode);
+        if (mode) setTimeout(() => { const i = quickBox.querySelector("input"); if (i && isActive("online")) i.focus({ preventScroll: true }); }, 400);
+      },
     };
+  }
+  function takeAutocreate() {
+    try { const v = sessionStorage.getItem("dva:autocreate"); if (v) sessionStorage.removeItem("dva:autocreate"); return !!v; } catch (e) { return false; }
   }
   const liveSession = () => (C.session && !C.ended ? C.session : store.get("session", null));
   function refreshHome() {
@@ -1834,22 +2088,25 @@
       await teardown(true);
     } finally { busy(b, false); }
   }
-  async function onJoin(code, b) {
+  // via = de knop die het meedoen startte (snelstart-kaart); standaard de Meedoen-knop onder de code
+  async function onJoin(code, b, via) {
     if (!home) return;
+    const btnEl = via || home.joinB;
+    const fail = (msg) => { home.err.textContent = msg; if (via) toast(msg); shake(via ? via : home.codebox); };
     const prof = requireName();
-    if (!prof || home.joinB.disabled) return;
-    if (code.length !== 4) { shake(home.codebox); home.err.textContent = "Vul de 4 letters van de kamercode in"; return; }
+    if (!prof || btnEl.disabled) return;
+    if (code.length !== 4) { fail("Vul de 4 letters van de kamercode in"); return; }
     if (C.ended) await teardown(true);
     const old = liveSession();
     if (old && old.code === code) { if (resume()) { location.hash = "room"; return; } }
     if (old && !(await leaveOld(code))) return;
-    busy(home.joinB, "Kamer zoeken…");
+    busy(btnEl, "Kamer zoeken…");
     try {
       const found = await N.findRoom(code, { preferIndex: b });
-      if (!found) { home.err.textContent = `Kamer ${code} niet gevonden 🤔 Klopt de code?`; shake(home.codebox); return; }
+      if (!found) { fail(`Kamer ${code} niet gevonden 🤔 Klopt de code?`); return; }
       const st = found.state;
-      if (Array.isArray(st.players) && st.phase === "lobby" && st.players.filter((p) => !p.left).length >= E.MAX_PLAYERS) {
-        home.err.textContent = "Deze kamer is vol (12 spelers)"; shake(home.codebox); return;
+      if (Array.isArray(st.players) && st.phase === "lobby" && st.players.filter((p) => !p.left).length >= ROOM_MAX) {
+        fail(`Deze kamer is vol (${ROOM_MAX} spelers)`); return;
       }
       await joinRoom(code, found, prof);
       pendingJoin = null;
@@ -1857,9 +2114,9 @@
       location.hash = "room";
     } catch (e) {
       console.warn(e);
-      home.err.textContent = "Geen verbinding met de server 😕 Probeer het nog eens";
+      fail("Geen verbinding met de server 😕 Probeer het nog eens");
       await teardown(true);
-    } finally { busy(home.joinB, false); }
+    } finally { busy(btnEl, false); }
   }
 
   // =========================================================
@@ -1867,15 +2124,29 @@
   // =========================================================
   hooks.online = () => {
     refreshHome();
+    const auto = !PREVIEW && takeAutocreate();
     if (pendingJoin && home) {
       home.setCode(pendingJoin.code);
       const p = getProfile();
       const other = liveSession();
-      if (p.name.trim() && !pendingJoin.tried && (!other || other.code === pendingJoin.code)) {
+      if (!p.name.trim()) { home.quick("join", pendingJoin.code); return; } // nooit eerder geopend: alleen je naam, dan de lobby in
+      home.quick(null);
+      if (!pendingJoin.tried && (!other || other.code === pendingJoin.code)) {
         pendingJoin.tried = true;
         setTimeout(() => onJoin(pendingJoin.code, pendingJoin.b), 350);
-      } else if (!p.name.trim()) toast("Vul je naam in en tik op Meedoen 👇");
+      }
+      return;
     }
+    if (auto && home) {
+      // "Speel samen" op de home: zit je al in een kamer, dan terug daarheen; anders meteen een kamer maken
+      // (de allereerste keer eerst je naam).
+      if (liveSession()) { location.hash = "room"; return; }
+      if (!getProfile().name.trim()) { home.quick("create"); return; }
+      home.quick(null);
+      setTimeout(() => onCreate(home.createB), 60);
+      return;
+    }
+    if (home) home.quick(null);
   };
   hooks.room = () => {
     if (PREVIEW) { if (previewVm) { cur.key = null; renderRoom(previewVm); } else ensureShell(); return; }
@@ -1897,7 +2168,10 @@
       if (N.brokerOverride) N.brokerOverride(); // bewaart ?broker= in sessionStorage vóór we de URL opschonen
       const b = parseInt(QS.get("b"), 10);
       pendingJoin = { code: j, b: Number.isInteger(b) && b >= 0 ? b : undefined };
-      history.replaceState(null, "", location.pathname + "#online");
+      const keep = new URLSearchParams(location.search); // join/b eruit; de rest (broker, test) blijft staan voor herladen
+      keep.delete("join"); keep.delete("b");
+      const q = keep.toString();
+      history.replaceState(null, "", location.pathname + (q ? "?" + q : "") + "#online");
     }
   } else {
     // Preview: nooit verbinden; meteen het kamerscherm tonen
@@ -1909,7 +2183,7 @@
   }
 
   window.DVOnline = {
-    debug: () => ({ pub: C.pub, priv: C.priv, me: C.session && { pid: C.session.pid, isHost: C.session.isHost, code: C.session.code }, status: C.status, outbox: C.outbox.slice(), presence: Object.assign({}, C.presence) }),
+    debug: () => ({ pub: C.pub, priv: C.priv, me: C.session && { pid: C.session.pid, isHost: C.session.isHost, code: C.session.code }, game: C.pub ? gameOf(C.pub) : null, status: C.status, outbox: C.outbox.slice(), presence: Object.assign({}, C.presence) }),
     // Preview / design-QA: render het kamerscherm met een vaste vm (zonder netwerk)
     preview(v) {
       previewVm = Object.assign({ presence: {}, pending: new Set(), status: "online", host: null, ended: null, brokerIndex: 0, since: Date.now() }, v);

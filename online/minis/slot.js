@@ -738,6 +738,7 @@
     let lock = null, tryBtn = null, hist = null;
     const ringUI = [];
     let pos = (v && v.rings ? v.rings : [0, 0, 0, 0]).slice(); // continue posities (gehele getallen in rust)
+    let touched = false; // ringen al gedraaid? Zo niet, dan volgt pos de (later binnengekomen) ringstand van de host.
     let busy = false, busyT = 0;
     const idx = (k) => mod(Math.round(pos[k]));
     const current = () => [0, 1, 2, 3].map(idx);
@@ -763,6 +764,7 @@
     function turn(k, delta) {
       // delta in hele stappen vanaf de huidige rustpositie; stuurt de netto draai naar de host
       if (phase !== "play" || busy) return;
+      touched = true;
       pos[k] = Math.round(pos[k]) + delta;
       setDrum(k, true); click(false); clearMark(k);
       let dir = mod(delta); if (dir > 3) dir -= N;
@@ -797,6 +799,7 @@
         on(win, "pointerdown", (e) => {
           if (phase !== "play" || busy) return;
           e.preventDefault();
+          touched = true;
           try { win.setPointerCapture(e.pointerId); } catch (er) { /* oud toestel */ }
           drag = { id: e.pointerId, y: e.clientY, p0: Math.round(pos[k]), last: Math.round(pos[k]), moved: false };
           ringUI[k].drum.classList.remove("snap");
@@ -1109,6 +1112,12 @@
         if (dead || !nv) return;
         const prev = v;
         v = nv;
+        // De privé-view komt meestal nét na de publieke state binnen: de ringen beginnen dan op de stand van de host
+        // (anders staan telefoon en host vanaf het begin verschillend en klopt de stand na herladen niet).
+        if (role === "slot" && Array.isArray(v.rings) && !touched && !(prev && Array.isArray(prev.rings))) {
+          pos = v.rings.slice();
+          if (ringUI.length) ringUI.forEach((u, k) => setDrum(k, false));
+        }
         if (phase === "howto" || phase === "count") {
           seenTries = v.tries.length;
           if (phase === "howto" && (v.done || (role === "kijker" && v.running))) { how.remove(); if (v.done) phase = "count"; enterPlay(); }

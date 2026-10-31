@@ -5,8 +5,11 @@
  * The input state is never mutated; every change returns a fresh object.
  *
  * API
- *   DVInfiltrant.createState({ code, host: { pid, key, name, avatar, color }, settings?, now? }) → state
+ *   DVInfiltrant.createState({ code, host: { pid, key, name, avatar, color }, settings?, now?, carry? }) → state
  *       Host is auto-joined, acks[host] = 0 (host's first envelope uses seq 1).
+ *       `carry` (from DVRoom.carryFrom(otherState), when the lobby switches game) keeps players (lobby shape), keys,
+ *       acks, scores, removed and hostPid, so clients' seq/acks continue seamlessly; `stats` and `fire` of the other
+ *       engines travel along as opaque fields (never published) so a later switch back keeps them.
  *   DVInfiltrant.reduce(state, env, ctx) → newState
  *       env = { pid, key, seq, t, d }, ctx = { rng: () => [0,1), now: ms, words: DV_WORDPAIRS }
  *       - ignored envelope (unknown pid & not join, wrong key, duplicate/gap seq, removed pid) → SAME reference
@@ -130,12 +133,13 @@
   }
 
   // ---------- State ----------
-  function createState({ code, host, settings, now } = {}) {
+  function createState({ code, host, settings, now, carry } = {}) {
     host = host || {};
-    const pid = String(host.pid || "host");
+    const c = carry && typeof carry === "object" ? carry : null;
+    const pid = String((c && typeof c.hostPid === "string" && c.hostPid) || host.pid || "host");
     const p = profile(host);
-    return {
-      v: 1, code: String(code || ""), hostPid: pid, phase: "lobby", gameNo: 0, round: 0, updatedAt: typeof now === "number" ? now : 0,
+    const s = {
+      v: 1, game: "infiltrant", code: String(code || ""), hostPid: pid, phase: "lobby", gameNo: 0, round: 0, updatedAt: typeof now === "number" ? now : 0,
       settings: mergeSettings(clone(DEFAULT_SETTINGS), settings),
       players: [{ pid, name: p.name, avatar: p.avatar, color: p.color, alive: true, spectator: false, left: false }],
       scores: { [pid]: 0 }, acks: { [pid]: 0 }, removed: [],
@@ -145,6 +149,29 @@
       keys: { [pid]: String(host.key || "") }, roles: {}, words: null, votes: {}, usedPairs: [],
       pendingWinner: null, starter: null, gameDelta: {},
     };
+    if (c) applyCarry(s, c, host);
+    return s;
+  }
+  // Spelwissel in de lobby (zie DVRoom.createBase): spelers in lobby-vorm, keys/acks van álle bekende pids (acks mogen
+  // nooit terugvallen), scores, removed; stats/vuur van de andere engines reizen ongepubliceerd mee.
+  function applyCarry(s, c, host) {
+    const strMap = (o) => { const out = {}; if (o && typeof o === "object") for (const k of Object.keys(o)) if (typeof o[k] === "string") out[k] = o[k]; return out; };
+    const intMap = (o) => { const out = {}; if (o && typeof o === "object") for (const k of Object.keys(o)) if (Number.isInteger(o[k])) out[k] = o[k]; return out; };
+    const players = (Array.isArray(c.players) ? c.players : [])
+      .filter((p) => p && typeof p === "object" && typeof p.pid === "string" && p.pid && !p.left)
+      .map((p) => { const q = profile(p); return { pid: p.pid, name: q.name, avatar: q.avatar, color: q.color, alive: true, spectator: false, left: false }; });
+    if (!players.some((p) => p.pid === s.hostPid)) players.unshift(s.players[0]);
+    s.players = players.slice(0, MAX_PLAYERS);
+    s.keys = strMap(c.keys);
+    if (!hasOwn(s.keys, s.hostPid)) s.keys[s.hostPid] = String((host && host.key) || "");
+    s.acks = intMap(c.acks);
+    if (!hasOwn(s.acks, s.hostPid)) s.acks[s.hostPid] = 0;
+    s.scores = intMap(c.scores);
+    for (const p of s.players) if (!hasOwn(s.scores, p.pid)) s.scores[p.pid] = 0;
+    s.removed = Array.isArray(c.removed) ? c.removed.filter((x) => typeof x === "string") : [];
+    s.infiltrantCount = effectiveInfiltrants(s.settings.infiltrants, s.players.length);
+    if (c.stats && typeof c.stats === "object") s.stats = clone(c.stats);
+    if (Number.isInteger(c.fire)) s.fire = c.fire;
   }
 
   const player = (s, pid) => s.players.find((p) => p.pid === pid);
@@ -475,7 +502,7 @@
   function publicView(state) {
     const s = state;
     const pub = {
-      v: 1, code: s.code, hostPid: s.hostPid, phase: s.phase, gameNo: s.gameNo, round: s.round, updatedAt: s.updatedAt,
+      v: 1, game: "infiltrant", code: s.code, hostPid: s.hostPid, phase: s.phase, gameNo: s.gameNo, round: s.round, updatedAt: s.updatedAt,
       settings: s.settings,
       players: s.players.map((p) => ({ pid: p.pid, name: p.name, avatar: p.avatar, color: p.color, alive: p.alive, spectator: p.spectator, left: p.left })),
       scores: s.scores, acks: s.acks, removed: s.removed, order: s.order, turn: s.turn, hints: s.hints, ready: s.ready,

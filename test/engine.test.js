@@ -845,7 +845,7 @@ test("publicView lekt geen woorden/rollen/keys tijdens het spel", () => {
     assert.equal(r.s.phase, "over");
     assert.ok(JSON.stringify(E.publicView(r.s)).includes(JSON.stringify(r.s.words.burger)));
     const pub = E.publicView(r.s);
-    assert.deepEqual(Object.keys(pub).sort(), ["acks", "candidates", "code", "gameNo", "guess", "hints", "hostPid", "infiltrantCount",
+    assert.deepEqual(Object.keys(pub).sort(), ["acks", "candidates", "code", "game", "gameNo", "guess", "hints", "hostPid", "infiltrantCount",
       "lastVote", "order", "phase", "players", "ready", "removed", "result", "revote", "round", "scores", "settings", "turn",
       "updatedAt", "v", "voted"].sort());
     for (const p of pub.players) assert.deepEqual(Object.keys(p).sort(), ["alive", "avatar", "color", "left", "name", "pid", "spectator"]);

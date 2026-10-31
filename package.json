@@ -7,7 +7,8 @@
     "dev": "node tools/dev.mjs",
     "test": "node --test \"test/*.test.*\" \"online/minis/__tests__/*.test.js\"",
     "e2e": "node test/e2e/run.mjs",
-    "release": "git push origin main:release && gh workflow run pages.yml --ref main"
+    "release": "git push origin main:release && gh workflow run pages.yml --ref main",
+    "e2e:kerst": "node test/e2e/kerst.mjs"
   },
   "devDependencies": {
     "aedes": "^0.51.3",

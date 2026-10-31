@@ -1,15 +1,17 @@
 // E2E-tests met Playwright (Chromium, iPhone 13-viewport + touch) tegen een lokale MQTT-broker en statische server,
 // beide op vrije poorten. Elke "telefoon" is een eigen browsercontext (eigen opslag), net als echte telefoons.
 //   npm run e2e                       alle suites
-//   npm run e2e -- infiltrant         alleen één suite (infiltrant | smoke)
+//   npm run e2e -- vuurwacht          alleen één suite (vuurwacht | arcade | infiltrant | smoke)
 //   E2E_SHOTS=<map> npm run e2e       screenshots van elke fase (standaard test-results/e2e/)
 // Faalt bij elke mislukte stap én bij elke console-fout / pageerror op welke telefoon dan ook.
 import { join } from "node:path";
 import { createEnv, ROOT, log, sleep } from "./lib.mjs";
+import vuurwacht from "./vuurwacht.mjs";
+import arcade from "./arcade.mjs";
 import infiltrant from "./infiltrant.mjs";
 import smoke from "./smoke.mjs";
 
-const SUITES = { infiltrant, smoke };
+const SUITES = { vuurwacht, arcade, infiltrant, smoke };
 
 async function main() {
   if (process.env.NODE_TEST_CONTEXT) { // via `node --test` opgepikt: e2e draait alleen via npm run e2e
@@ -22,7 +24,7 @@ async function main() {
   const names = pick.length ? pick : Object.keys(SUITES);
   const shots = process.env.E2E_SHOTS || join(ROOT, "test-results", "e2e");
   const env = await createEnv({ shots });
-  const watchdog = setTimeout(() => { console.error("✗ e2e duurt te lang (> 12 min)"); process.exit(1); }, 12 * 60e3);
+  const watchdog = setTimeout(() => { console.error("✗ e2e duurt te lang (> 25 min)"); process.exit(1); }, 25 * 60e3);
   watchdog.unref();
   let steps = 0, failed = null;
   env.step = async (name, fn) => {

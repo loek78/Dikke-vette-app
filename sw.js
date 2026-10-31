@@ -1,11 +1,15 @@
 // Offline-first cache. Verhoog VERSION bij elke release.
-const VERSION = "dva-v2";
+const VERSION = "dva-v3";
 const ASSETS = [
-  "./", "index.html", "styles.css", "app.js", "data.js", "manifest.webmanifest",
+  "./", "index.html", "styles.css", "app.js", "data.js", "data-vuur.js", "fire.js", "manifest.webmanifest",
   "icons/icon.svg", "icons/icon-192.png", "icons/icon-512.png", "icons/apple-touch-icon.png",
-  // v2: online Infiltrant
   "vendor/mqtt.min.js", "vendor/qrcode.js",
-  "online/words.js", "online/engine.js", "online/net.js", "online/ui.js", "online/online.css", "online/preview.js",
+  // Samen spelen: platform + Infiltrant
+  "online/words.js", "online/room.js", "online/engine.js", "online/net.js", "online/ui.js", "online/online.css", "online/preview.js",
+  // v3: Vuurwacht (verhaal), minigames en arcade
+  "online/story.js", "online/story-engine.js", "online/arcade.js", "online/story-ui.js", "online/arcade-ui.js", "online/story.css",
+  "online/minis/core.js", "online/minis/blaasbalg.js", "online/minis/bijl.js", "online/minis/vonken.js", "online/minis/slot.js",
+  "online/minis/echo.js", "online/minis/snel.js", "online/minis/verhaal.js",
   "fonts/unbounded-latin-500-normal.woff2", "fonts/unbounded-latin-700-normal.woff2", "fonts/unbounded-latin-900-normal.woff2",
 ];
 

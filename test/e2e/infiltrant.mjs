@@ -12,11 +12,11 @@ const require = createRequire(import.meta.url);
 const { DV_WORDCATS } = require("../../online/words.js");
 
 const PROFILES = {
-  Loek: { avatar: "😎", color: "#ff2e93" },
-  Sanne: { avatar: "🦊", color: "#22e6ff" },
-  Jeroen: { avatar: "🤖", color: "#9dff3d" },
-  Fleur: { avatar: "🦄", color: "#ffe03d" },
-  Mo: { avatar: "👽", color: "#8b5cff" },
+  Loek: { avatar: "😎", color: "#ff6a1a" },
+  Sanne: { avatar: "🦊", color: "#5aa9ff" },
+  Jeroen: { avatar: "🤖", color: "#ffc247" },
+  Fleur: { avatar: "🦄", color: "#ffe7b8" },
+  Mo: { avatar: "👽", color: "#c98f5a" },
 };
 const VERDICT = { inf: "WAS DE INFILTRANT", burg: "was een burger 😇", tie: "Niemand eruit!" };
 const IN = (sel) => `#olHome ${sel}`;
@@ -243,6 +243,16 @@ export default async function infiltrant(env) {
     eq(names, ["Loek", "Sanne", "Jeroen", "Fleur", "Mo"], "spelers in de lobby (volgorde van binnenkomst)");
     await shots("02-lobby");
   });
+  await step("host kiest Infiltrant in de spelkiezer (vanaf 3 spelers) → iedereen wisselt mee", async () => {
+    const before = await S();
+    eq(before.game, "story", "een nieuwe kamer begint met Vuurwacht");
+    assert(await host.page.$eval('[data-act="game"][data-v="infiltrant"]', (b) => !b.disabled && !b.classList.contains("is-off")), "Infiltrant beschikbaar met 5 spelers");
+    await host.tap('[data-act="game"][data-v="infiltrant"]');
+    for (const p of room()) await until(async () => (await p.debug()).game === "infiltrant", { msg: `${p.name} ziet Infiltrant` });
+    const st = await S();
+    eq([st.game, st.players.map((p) => p.pid), st.acks, st.keys], ["infiltrant", before.players.map((p) => p.pid), before.acks, before.keys], "spelers, acks en keys gaan mee");
+    await host.page.waitForSelector('[data-act="mode"][data-v="woord"]', { timeout: 5000 });
+  });
   await step("host past instellingen aan → iedereen ziet ze", async () => {
     await host.tap('[data-act="seg-infiltrants"][data-v="2"]');
     await host.tap('[data-act="seg-hintRounds"][data-v="2"]');
@@ -435,10 +445,11 @@ export default async function infiltrant(env) {
     await all((p) => p.waitPhase("hints"));
     iris = await env.phone("Iris");
     await iris.goto(link);
-    await iris.page.waitForSelector('section[data-screen="online"].active');
+    await iris.page.waitForSelector('section[data-screen="online"].active [data-act="quick-name"]');
     await until(async () => (await iris.page.$$eval(IN('[data-act="code"]'), (b) => b.map((x) => x.value).join(""))) === code, { msg: "code voorgevuld vanuit de link" });
-    await iris.page.fill(IN('[data-act="name"]'), "Iris");
-    await iris.tap(IN('[data-act="join"]'));
+    assert(new RegExp("kamer " + code).test(await iris.text(".o-quick")), "zonder profiel: alleen een naamveld voor deze kamer");
+    await iris.page.fill(IN('[data-act="quick-name"]'), "Iris");
+    await iris.tap(IN('[data-act="quick-go"]'));
     await iris.waitPhase("hints");
     await enter(iris);
     await iris.page.waitForSelector(".o-watch-pill:has-text('Je kijkt mee')", { timeout: 8000 });
