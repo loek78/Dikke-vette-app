@@ -37,7 +37,7 @@
     const glow = (rgb, hot, soft) => {
       const c = mk(64, 64), x = c.getContext("2d"), g = x.createRadialGradient(32, 32, 0, 32, 32, 32);
       g.addColorStop(0, hot ? "rgba(255,247,215,1)" : `rgba(${rgb},1)`);
-      if (soft) [[.15, .72], [.35, .36], [.6, .11], [.8, .03]].forEach(([p, a]) => g.addColorStop(p, `rgba(${rgb},${a})`));
+      if (soft) [[.08, .8], [.2, .48], [.4, .2], [.62, .07], [.82, .02]].forEach(([p, a]) => g.addColorStop(p, `rgba(${rgb},${a})`));
       else g.addColorStop(hot ? .14 : .22, `rgba(${rgb},${hot ? .85 : .6})`), g.addColorStop(.5, `rgba(${rgb},.18)`);
       g.addColorStop(1, `rgba(${rgb},0)`);
       x.fillStyle = g; x.fillRect(0, 0, 64, 64); return c;
@@ -149,7 +149,7 @@
     function size(w, h) {
       W = w; H = h; S = M.min(W * 1.05, H / 1.1); cx = W / 2; gy = H - S * .06; y0 = gy - S * .06;
       const bw = S * 1.1, top = M.max(0, y0 - S * 1.02);
-      q = M.min(.5, 260 / bw); fb.width = M.ceil(bw * q); fb.height = M.ceil((y0 + S * .02 - top) * q); fbX = cx - bw / 2; fbY = top;
+      q = M.min(.5, 240 / bw); fb.width = M.ceil(bw * q); fb.height = M.ceil((y0 + S * .02 - top) * q); fbX = cx - bw / 2; fbY = top;
       buildBed(); sL.fill(0); warm();
     }
 
@@ -226,8 +226,7 @@
       c.globalCompositeOperation = "lighter";
       // warm licht rondom + gloed om de vlam
       const gcy = y0 - FH * .35, rx = M.min(W / 2, S * 1.2), ry = M.min(gcy, H - gcy, S);
-      c.globalAlpha = (.16 + .34 * Ic) * fl; c.drawImage(sp.amb, cx - rx, gcy - ry, rx * 2, ry * 2);
-      c.globalAlpha = (.12 + .3 * Ic) * pres * fl; c.drawImage(sp.core, cx - hw * 3, y0 - FH * .85, hw * 6, FH * 1.1);
+      c.globalAlpha = (.2 + .42 * Ic) * fl; c.drawImage(sp.amb, cx - rx, gcy - ry, rx * 2, ry * 2);
       // vlammen in een buffer op lagere resolutie
       f.setTransform(1, 0, 0, 1, 0, 0); f.globalAlpha = 1; f.globalCompositeOperation = "source-over"; f.clearRect(0, 0, fw, fh);
       f.globalCompositeOperation = "lighter";
@@ -252,6 +251,7 @@
       const n = 32, sh = fh / n, iq = 1 / q;
       for (let k = n - 1, ob = 0; k >= 0; k--) {
         const yT = fbY + k * sh * iq, hN = M.max(0, (y0 - yT) / S), amp = S * .07 * hN ** 1.3 * (.6 + .4 * Ic);
+        if (y0 - yT - sh * iq > FH * 1.35) break; // hierboven komt geen vlam
         const ot = amp * ((vn(hN * 3.1 - time * 2.8) - .5) * 2 + (vn(hN * 8 - time * 5.3 + 50) - .5) * .9);
         c.setTransform(iq, 0, (ob - ot) / sh, iq, fbX + ot, yT);
         c.drawImage(fb, 0, k * sh, fw, sh, 0, 0, fw, sh);
@@ -298,7 +298,8 @@
   function embers(cv, o = {}) {
     const sp = sprites(), ctx = cv.getContext("2d"), N = 64;
     const x = F32(N), y = F32(N), vx = F32(N), vy = F32(N), z = F32(N), ph = F32(N), life = F32(N), max = F32(N), col = new Uint8Array(N);
-    let W = 0, H = 0, d = 1, n = 0, time = 0, dens = clamp(o.density == null ? .5 : +o.density || 0, 0, 1);
+    const dirty = F32(N * 3); // vorige tekenplek per vonkje: alleen die stukjes wissen, niet het hele scherm
+    let W = 0, H = 0, d = 1, n = 0, time = 0, full = true, dens = clamp(o.density == null ? .5 : +o.density || 0, 0, 1);
     const count = () => { n = M.min(N, M.round((5 + 30 * dens) * clamp(W * H / (d * d * 330000), .4, 2.2))); };
     function spawn(k, any) {
       z[k] = R() ** 1.6; x[k] = R() * W; y[k] = any ? R() * H : H + R() * 40 * d;
@@ -306,7 +307,7 @@
       ph[k] = R() * 99; max[k] = life[k] = 4 + 8 * R(); col[k] = R() * 3 | 0;
       if (any) life[k] *= R();
     }
-    function size(w, h, dpr) { W = w; H = h; d = dpr; count(); for (let k = 0; k < N; k++) spawn(k, true); }
+    function size(w, h, dpr) { W = w; H = h; d = dpr; full = true; count(); for (let k = 0; k < N; k++) spawn(k, true); }
     function step(dt) {
       time += dt;
       for (let k = 0; k < n; k++) {
@@ -317,12 +318,15 @@
     }
     function draw() {
       const c = ctx;
-      c.setTransform(1, 0, 0, 1, 0, 0); c.globalAlpha = 1; c.globalCompositeOperation = "source-over"; c.clearRect(0, 0, W, H);
+      c.setTransform(1, 0, 0, 1, 0, 0); c.globalAlpha = 1; c.globalCompositeOperation = "source-over";
+      if (full) c.clearRect(0, 0, W, H), full = false;
+      else for (let k = 0; k < N * 3; k += 3) if (dirty[k + 2]) { const r = dirty[k + 2] + 3; c.clearRect(M.floor(dirty[k] - r), M.floor(dirty[k + 1] - r), r * 2 + 2 | 0, r * 2 + 2 | 0); dirty[k + 2] = 0; }
       c.globalCompositeOperation = "lighter";
       for (let k = 0; k < n; k++) {
         const f = life[k] / max[k], zz = z[k], r = (2.2 + 8 * zz * zz) * d;
         c.globalAlpha = ss(0, .25, f) * ss(1, .85, f) * (.35 + .65 * vn(time * 3 + ph[k])) * (.95 - .5 * zz) * (.5 + .5 * y[k] / H);
         c.drawImage(zz > .7 ? sp.core : sp.s[col[k]], x[k] - r, y[k] - r, r * 2, r * 2);
+        dirty[k * 3] = x[k]; dirty[k * 3 + 1] = y[k]; dirty[k * 3 + 2] = r;
       }
     }
     const run = runner(cv, { size, step, draw, warm() {}, ready: () => W > 0 });

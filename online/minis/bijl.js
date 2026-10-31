@@ -9,8 +9,8 @@
   // Per moeilijkheid: naaldperiode (heen+terug, ms), sinus-beweging, vakbreedte (halve breedte, 0..1) en krimp per treffer,
   // waar het vak mag staan, kans op een knoest en "par" (wat een goede houthakker haalt, voor de score).
   const CFG = {
-    1: { name: "Handbijl", period: 1800, wave: false, base: 0.15, min: 0.06, shrink: 0.9, lo: 0.3, hi: 0.7, knot: 0, par: 13 },
-    2: { name: "Kloofbijl", period: 1300, wave: false, base: 0.12, min: 0.045, shrink: 0.89, lo: 0.16, hi: 0.84, knot: 0.2, par: 11 },
+    1: { name: "Handbijl", period: 1800, wave: false, base: 0.15, min: 0.06, shrink: 0.9, lo: 0.3, hi: 0.7, knot: 0, par: 15 },
+    2: { name: "Kloofbijl", period: 1300, wave: false, base: 0.12, min: 0.045, shrink: 0.89, lo: 0.16, hi: 0.84, knot: 0.2, par: 12 },
     3: { name: "Grote bijl", period: 1050, wave: true, base: 0.1, min: 0.035, shrink: 0.88, lo: 0.1, hi: 0.9, knot: 0.35, par: 9 },
   };
   const SWING = 110, HIT_BUSY = 400, MISS_BUSY = 680; // ms vanaf de tik
@@ -100,7 +100,7 @@
     const skill = Math.max(0.3, Math.min(0.97, 0.58 + rng() * 0.38 - (d - 1) * 0.05));
     let t = 0, i = 0, cracked = false, logs = 0, perfect = 0, misses = 0, streak = 0, combo = 0;
     for (;;) {
-      t += c.period * (0.18 + rng() * 0.45) * (1.5 - skill);
+      t += c.period * (0.2 + rng() * 0.32) * (1.6 - skill * 0.6);
       if (t >= DURATION) break;
       const w = halfWidth(streak, d);
       if (rng() < Math.min(0.97, skill * (0.62 + w * 2.6))) {
@@ -295,11 +295,11 @@
       const mR = Math.min(W * 0.37, H * 0.165, 150);
       const mY = Math.max(H * 0.255, 58 + mR + 18);
       const axeLen = Math.min(W * 0.31, 128), blade = axeLen * 0.3;
-      const pr = Math.max(13, Math.min(W / 22, 19));
+      const pr = Math.max(15, Math.min(W / 18, 23));
       const pileB = H - Math.max(12, H * 0.02), pileL = 16 + pr * 0.4, pileR = W - 16 - pr * 0.4;
       const perRow = Math.max(4, Math.floor((pileR - pileL) / (pr * 2)));
       L = { cx, horizon, ground, srx, sry, stumpTop, lrx, lry, lh, logTop, mR, mY, axeLen, blade, pr, pileB, pileL, pileR, perRow,
-        rowH: pr * 1.74, maxRows: Math.max(2, Math.min(5, Math.floor((pileB - (ground + H * 0.075)) / (pr * 1.74)))),
+        rowH: pr * 1.74, maxRows: Math.max(2, Math.min(5, Math.floor((pileB - (ground + H * 0.05)) / (pr * 1.74)))),
         lanX: cx - Math.min(W * 0.36, 160), lanY: ground - H * 0.17 };
       L.strike = { x: cx, y: logTop + 2 };
       L.pivS = { x: cx + axeLen, y: logTop + 2 - blade };
@@ -568,6 +568,14 @@
       tg.addColorStop(0, "#3a2c22"); tg.addColorStop(1, "#1a120c");
       g.lineWidth = tw; g.strokeStyle = tg;
       g.beginPath(); g.arc(cx, mY, mR, mAng(0), mAng(1)); g.stroke();
+      // klinknagels aan de uiteinden
+      [0, 1].forEach((q) => {
+        const a = mAng(q) + (q ? 0.09 : -0.09);
+        const rx = cx + Math.cos(a) * mR, ry = mY + Math.sin(a) * mR;
+        const rg = g.createRadialGradient(rx - 1.5, ry - 1.5, 0.5, rx, ry, tw * 0.42);
+        rg.addColorStop(0, "#8a7a6a"); rg.addColorStop(0.5, "#3a2c22"); rg.addColorStop(1, "#120c08");
+        g.fillStyle = rg; g.beginPath(); g.arc(rx, ry, tw * 0.42, 0, TAU); g.fill();
+      });
       // streepjes
       g.lineCap = "butt"; g.strokeStyle = "rgba(255,231,184,.18)"; g.lineWidth = 1.5;
       for (let i = 0; i <= 20; i++) {
@@ -590,9 +598,13 @@
       g.lineWidth = tw * 0.16; g.strokeStyle = "rgba(255,194,71,.8)";
       g.beginPath(); g.arc(cx, mY, mR - tw * 0.05, a0, a1); g.stroke();
       g.shadowColor = "rgba(255,194,71,1)"; g.shadowBlur = 12 + 10 * pulse;
-      g.lineWidth = tw + 2; g.strokeStyle = "#fff0c4";
+      const k0 = mAng(Math.max(0, visC - pk)), k1 = mAng(Math.min(1, visC + pk));
       g.lineCap = "butt";
-      g.beginPath(); g.arc(cx, mY, mR, mAng(Math.max(0, visC - pk)), mAng(Math.min(1, visC + pk))); g.stroke();
+      g.lineWidth = tw + 3; g.strokeStyle = "#ffc247";
+      g.beginPath(); g.arc(cx, mY, mR, k0, k1); g.stroke();
+      g.shadowBlur = 0;
+      g.lineWidth = tw * 0.45; g.strokeStyle = "#fff6dc";
+      g.beginPath(); g.arc(cx, mY, mR, k0, k1); g.stroke();
       g.shadowBlur = 0; g.globalAlpha = 1;
       // naald (met spoor)
       const p = phase === "howto" ? needle(ts * 1000, d) : needleNow(t);
