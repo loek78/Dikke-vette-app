@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <title>Minigame testbank</title>
+  <!-- Ontwikkel-testbank: speel één minigame los. Niet gelinkt vanuit de app.
+       ?mini=bijl&difficulty=2&players=2           lokale minigame op één "telefoon"
+       net-minigames (slot, echo, verhaal) tonen automatisch alle spelers naast elkaar, met de host-logica in de pagina. -->
+  <link rel="stylesheet" href="../../styles.css">
+  <link rel="stylesheet" href="../online.css">
+  <link rel="stylesheet" href="../story.css">
+  <style>
+    body { margin: 0; }
+    .bench { display: flex; gap: 12px; padding: 12px; overflow-x: auto; }
+    .phone { flex: none; width: 390px; height: 760px; position: relative; border-radius: 28px; overflow: hidden;
+             outline: 1px solid rgba(255,255,255,.15); background: var(--soot, #0b0705); }
+    .phone > .label { position: absolute; z-index: 9; top: 6px; left: 50%; transform: translateX(-50%); font: 700 11px system-ui;
+             color: #fff; background: rgba(0,0,0,.5); padding: 2px 8px; border-radius: 99px; pointer-events: none; }
+    .stage { position: absolute; inset: 0; }
+    .solo .phone { width: 100vw; height: 100dvh; border-radius: 0; outline: 0; }
+    .solo .bench { padding: 0; }
+    pre#out { color: #ffe7b8; font: 12px ui-monospace, monospace; padding: 12px; white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+  <div class="bench" id="bench"></div>
+  <pre id="out"></pre>
+  <script>
+    // Minimale DVA-stub (geluid/trillen/toast) zodat minigames buiten de app draaien.
+    window.DVA = window.DVA || {
+      beep() {}, fanfare() {}, buzz() {}, toast(m) { console.log("toast:", m); }, confetti() {},
+      COLORS: ["#ff6a1a", "#ffc247", "#e8401c", "#5aa9ff", "#8a5a36", "#ffe7b8"],
+    };
+  </script>
+  <script src="../../fire.js" onerror="console.warn('fire.js ontbreekt (nog)')"></script>
+  <script src="../../data-vuur.js" onerror="console.warn('data-vuur.js ontbreekt (nog)')"></script>
+  <script src="../../data.js"></script>
+  <script src="core.js"></script>
+  <script>
+    (function () {
+      const q = new URLSearchParams(location.search);
+      const id = q.get("mini") || "bijl";
+      const difficulty = +(q.get("difficulty") || 1);
+      const nPlayers = Math.max(1, Math.min(6, +(q.get("players") || 2)));
+      const seed = +(q.get("seed") || 12345);
+      const NAMES = ["Loek", "Jacques", "Sanne", "Mo", "Iris", "Daan"];
+      const AV = ["🦊", "🐻", "🦉", "🐺", "🦌", "🐗"];
+      const COL = ["#ff6a1a", "#5aa9ff", "#ffc247", "#e8401c", "#8a5a36", "#ffe7b8"];
+      const players = NAMES.slice(0, nPlayers).map((name, i) => ({ pid: "p" + i, name, avatar: AV[i], color: COL[i] }));
+      const out = document.getElementById("out");
+      const log = (o) => { out.textContent = JSON.stringify(o, null, 2); console.log("[bench]", o); };
+
+      const s = document.createElement("script");
+      s.src = id + ".js";
+      s.onload = start;
+      s.onerror = () => log({ error: "kan " + id + ".js niet laden" });
+      document.head.appendChild(s);
+
+      function phone(p) {
+        const ph = document.createElement("div");
+        ph.className = "phone";
+        ph.innerHTML = '<div class="label"></div><div class="stage"></div>';
+        ph.firstChild.textContent = p.name + " (" + p.pid + ")";
+        document.getElementById("bench").appendChild(ph);
+        return ph.lastChild;
+      }
+
+      function start() {
+        const def = DVMini.get(id);
+        if (!def) return log({ error: "minigame niet geregistreerd: " + id });
+        const info = { difficulty, players };
+        if (def.kind === "local") {
+          // Eén telefoon speelt echt; de andere spelers zijn bots.
+          document.body.classList.toggle("solo", !q.has("multi"));
+          const me = players[0];
+          const mini = { id, nonce: 1, seed, difficulty };
+          const results = {};
+          players.slice(1).forEach((p, i) => { results[p.pid] = def.bot ? def.bot(DVMini.rng(seed + i + 1), difficulty) : null; });
+          const r = DVMini.runner(phone(me), {
+            send(msg) {
+              results[me.pid] = msg.r;
+              const sc = def.score(results, info);
+              log({ results, score: sc });
+              window.__benchDone = { results, score: sc };
+            },
+          });
+          r.sync({ mini, me, players });
+        } else {
+          // Net-minigame: host-logica in de pagina, elke speler een eigen "telefoon".
+          let roles = null;
+          if (def.roles) roles = def.roles(players, DVMini.rng(seed));
+          let shared = def.init({ seed, rng: DVMini.rng(seed), difficulty, players, roles });
+          const mini = { id, nonce: 1, seed, difficulty, roles };
+          const runners = players.map((p) => {
+            const rr = DVMini.runner(phone(p), {
+              send(msg) {
+                if (msg.k !== "act") return;
+                const next = def.reduce(shared, p.pid, msg.a, { rng: DVMini.rng(seed + Date.now() % 1000), now: Date.now() });
+                if (next === shared) return;
+                shared = next;
+                window.__benchShared = shared;
+                refresh();
+              },
+            });
+            return { p, rr };
+          });
+          function refresh() {
+            runners.forEach(({ p, rr }) => rr.sync({ mini, view: def.view(shared, p.pid), me: p, players }));
+            const res = def.result(shared);
+            if (res) { const sc = def.score(res, info); log({ result: res, score: sc }); window.__benchDone = { result: res, score: sc }; }
+          }
+          window.__benchShared = shared;
+          refresh();
+        }
+      }
+    })();
+  </script>
+</body>
+</html>
