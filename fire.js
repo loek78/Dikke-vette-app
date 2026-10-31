@@ -34,11 +34,12 @@
   let SP;
   function sprites() {
     if (SP) return SP;
-    const glow = (rgb, hot) => {
+    const glow = (rgb, hot, soft) => {
       const c = mk(64, 64), x = c.getContext("2d"), g = x.createRadialGradient(32, 32, 0, 32, 32, 32);
       g.addColorStop(0, hot ? "rgba(255,247,215,1)" : `rgba(${rgb},1)`);
-      g.addColorStop(hot ? .14 : .22, `rgba(${rgb},${hot ? .85 : .6})`);
-      g.addColorStop(.5, `rgba(${rgb},.18)`); g.addColorStop(1, `rgba(${rgb},0)`);
+      if (soft) [[.15, .72], [.35, .36], [.6, .11], [.8, .03]].forEach(([p, a]) => g.addColorStop(p, `rgba(${rgb},${a})`));
+      else g.addColorStop(hot ? .14 : .22, `rgba(${rgb},${hot ? .85 : .6})`), g.addColorStop(.5, `rgba(${rgb},.18)`);
+      g.addColorStop(1, `rgba(${rgb},0)`);
       x.fillStyle = g; x.fillRect(0, 0, 64, 64); return c;
     };
     // vlamtong: ronde voet → (gebogen) staart; tail = hoe snel hij versmalt, bend = kromming van de staart
@@ -57,8 +58,8 @@
     };
     return (SP = {
       lick: tongue(255, 104, 26, 1.9, .45), hot: tongue(255, 176, 84, 1.5, .25), body: tongue(255, 66, 18, 1.1, 0),
-      blue: tongue(84, 118, 255, 1.1, 0),
-      amb: glow("255,128,40"), core: glow("255,150,50"), ember: glow("255,78,18"),
+      blue: tongue(84, 118, 255, .8, 0),
+      amb: glow("255,128,40", 0, 1), core: glow("255,150,50"), ember: glow("255,78,18"),
       s: [glow("255,190,90", 1), glow("255,122,30", 1), glow("228,58,18", 1)],
     });
   }
@@ -113,7 +114,7 @@
       const x = bell(); tX[j] = x; tAge[j] = 0;
       tLife[j] = (.35 + .6 * R()) * (1.5 - .5 * M.min(I, 1));
       tHot[j] = M.abs(x) < .45 && R() < .45 ? 1 : 0;
-      tH[j] = (.4 + .6 * R()) * (1 - .6 * x * x) * (tHot[j] ? .6 : 1);
+      tH[j] = (.3 + .7 * R() ** 1.4) * (1 - .55 * x * x) * (tHot[j] ? .6 : 1);
       tW[j] = (.7 + .6 * R()) * (R() < .5 ? -1 : 1); tPh[j] = R() * 99;
     }
     function spark(boost) {
@@ -160,9 +161,9 @@
       g.addColorStop(0, "#ff9a3a"); g.addColorStop(.35, "#e8521a"); g.addColorStop(.7, "#6a1a06"); g.addColorStop(1, "rgba(50,12,4,0)");
       c.fillStyle = g; c.fillRect(-S * .4, -S * .4, S * .8, S * .8); c.restore();
       const co = [];
-      for (let k = 0; k < 120; k++) {
+      for (let k = 0; k < 150; k++) {
         const u = rnd() * 2 - 1, y = rnd();
-        co.push([ox + u * S * .3, oy - y * (1 - u * u) ** .6 * S * .065, S * (.011 + .014 * rnd()) * (1 - .3 * u * u), rnd() < .2 + .45 * (1 - M.abs(u)) * y]);
+        co.push([ox + u * S * .29, oy - y * (1 - u * u) ** .5 * S * .07, S * (.013 + .016 * rnd()) * (1 - .35 * u * u), rnd() < .22 + .5 * (1 - M.abs(u)) * y]);
       }
       co.sort((a, b) => a[1] - b[1]);
       const coal = ([x, y, r, h]) => {
@@ -170,44 +171,57 @@
         for (let i = 0, a0 = rnd() * TAU; i < 6; i++) { const a = a0 + i / 6 * TAU, rr = r * (.7 + .4 * rnd()); c.lineTo(M.cos(a) * rr, M.sin(a) * rr); }
         const gg = c.createRadialGradient(0, -r * .25, 0, 0, 0, r * 1.1);
         if (h) gg.addColorStop(0, "#ffc46a"), gg.addColorStop(.35, "#f2621c"), gg.addColorStop(.75, "#9a2408"), gg.addColorStop(1, "#2a0a04");
-        else gg.addColorStop(0, "#36200f"), gg.addColorStop(.6, "#140a06"), gg.addColorStop(1, "#070302");
+        else gg.addColorStop(0, "#3a2212"), gg.addColorStop(.6, "#160b06"), gg.addColorStop(1, "#070302");
         c.fillStyle = gg; c.fill(); c.restore();
       };
-      // verkoold blok: donker silhouet, gloeiende scheurtjes aan de vuurkant, gezaagde kop
+      // verkoold blok: donker, rond belicht, met een net van gloeiende scheurtjes dat heter wordt richting het vuur
       const log = (x, y, dir, ang, L, T) => {
         c.save(); c.translate(x, y); c.scale(dir, 1); c.rotate(ang);
         c.beginPath(); c.moveTo(0, T / 2);
-        for (let i = 0; i <= 10; i++) c.lineTo(L * i / 10, -T / 2 + T * .07 * (rnd() - .5));
+        for (let i = 0; i <= 10; i++) c.lineTo(L * i / 10, -T / 2 + T * .06 * (rnd() - .5));
         c.ellipse(L, 0, T * .25, T / 2, 0, -M.PI / 2, M.PI / 2); c.closePath();
         g = c.createLinearGradient(0, -T / 2, 0, T / 2);
-        g.addColorStop(0, "#5a3018"); g.addColorStop(.18, "#2a160b"); g.addColorStop(.6, "#120905"); g.addColorStop(1, "#060302");
+        g.addColorStop(0, "#4e2c16"); g.addColorStop(.2, "#26140a"); g.addColorStop(.65, "#100804"); g.addColorStop(1, "#040201");
         c.fillStyle = g; c.fill(); c.clip();
-        c.lineWidth = T * .04;
-        for (let i = 0; i < 26; i++) { // krokodillenhuid van houtskool
-          const xx = L * (.08 + .92 * rnd()), yy = T * (rnd() - .5), heat = ss(.35, 1, xx / L);
-          c.strokeStyle = heat > .2 && rnd() < .7 ? `rgba(255,${110 + 60 * rnd() | 0},40,${.35 + .5 * heat})` : "rgba(0,0,0,.6)";
-          c.shadowColor = "#ff5010"; c.shadowBlur = heat > .2 ? T * .25 : 0;
-          c.beginPath(); c.moveTo(xx, yy); c.lineTo(xx + T * (.12 + .3 * rnd()), yy + T * .1 * (rnd() - .5));
-          c.lineTo(xx + T * (.1 + .3 * rnd()), yy + T * (.1 + .15 * rnd())); c.stroke();
+        g = c.createLinearGradient(0, 0, L, 0);
+        g.addColorStop(0, "rgba(200,40,8,0)"); g.addColorStop(.6, "rgba(200,40,8,0)"); g.addColorStop(1, "rgba(220,60,12,.35)");
+        c.fillStyle = g; c.fillRect(0, -T, L * 1.3, T * 2);
+        g = c.createLinearGradient(0, 0, L, 0);
+        g.addColorStop(0, "rgba(255,90,20,0)"); g.addColorStop(.3, "rgba(160,36,8,.35)"); g.addColorStop(.7, "rgba(255,110,30,.9)"); g.addColorStop(1, "rgba(255,200,120,1)");
+        c.strokeStyle = g; c.lineWidth = T * .032; c.lineJoin = c.lineCap = "round"; c.shadowColor = "rgba(255,80,16,.9)"; c.shadowBlur = T * .14;
+        const row = (r) => -M.cos(r * M.PI / 4) * T / 2; // rijen dichter bij elkaar aan de randen: het blok is rond
+        for (let r = 1; r < 4; r++) { // lengtescheuren (met de nerf mee), elk stuk eigen gloed
+          c.beginPath();
+          for (let u = 0; u < L + T; u += T * .16) {
+            const yy = row(r) + (rnd() - .5) * T * .09;
+            if (rnd() < .22) { c.globalAlpha = .3 + .7 * rnd(); c.stroke(); c.beginPath(); c.moveTo(u, yy); } else c.lineTo(u, yy);
+          }
+          c.stroke();
         }
+        for (let i = 0; i < L / T * 3.5; i++) { // schuine dwarsscheurtjes
+          const u = rnd() * (L + T * .3), r = rnd() * 4 | 0, d = (rnd() - .5) * T * .45;
+          c.globalAlpha = .3 + .7 * rnd(); c.beginPath(); c.moveTo(u, row(r));
+          c.quadraticCurveTo(u + d / 2 + (rnd() - .5) * T * .2, (row(r) + row(r + 1)) / 2, u + d, row(r + 1)); c.stroke();
+        }
+        c.globalAlpha = 1;
         c.restore(); c.save(); c.translate(x, y); c.scale(dir, 1); c.rotate(ang); c.scale(.28, 1);
-        g = c.createRadialGradient(0, 0, 0, 0, 0, T / 2);
-        g.addColorStop(0, "#6e4426"); g.addColorStop(.5, "#4c2c16"); g.addColorStop(.8, "#2a170b"); g.addColorStop(.93, "#ff7a2a"); g.addColorStop(1, "#200c05");
+        g = c.createRadialGradient(-T * .1, -T * .1, 0, 0, 0, T / 2);
+        g.addColorStop(0, "#4a2c17"); g.addColorStop(.55, "#33200f"); g.addColorStop(.85, "#1e1008"); g.addColorStop(1, "#0b0503");
         c.fillStyle = g; c.beginPath(); c.arc(0, 0, T / 2, 0, TAU); c.fill();
-        c.lineWidth = T * .05; c.strokeStyle = "rgba(20,10,5,.5)"; c.beginPath(); c.arc(0, 0, T * .27, 0, TAU); c.stroke();
+        c.lineWidth = T * .05; c.strokeStyle = "rgba(10,5,2,.45)"; c.beginPath(); c.arc(0, 0, T * .27, 0, TAU); c.stroke();
         c.restore();
       };
       let k = 0;
       for (; k < co.length && co[k][1] < oy - S * .035; k++) coal(co[k]);
-      if (logs) { log(ox - S * .34, oy - S * .012, 1, -.17, S * .58, S * .085); log(ox + S * .34, oy - S * .008, -1, -.15, S * .56, S * .08); }
+      if (logs) { log(ox - S * .32, oy - S * .006, 1, -.27, S * .5, S * .08); log(ox + S * .32, oy, -1, -.25, S * .49, S * .076); }
       for (; k < co.length; k++) coal(co[k]);
-      for (let i = 0; i < 24; i += 2) { hot[i] = bedX + ox + (rnd() * 2 - 1) * S * .26; hot[i + 1] = bedY + oy - rnd() * S * .045; }
+      for (let i = 0; i < 24; i += 2) { hot[i] = bedX + ox + bell() * S * .26; hot[i + 1] = bedY + oy - S * (.01 + .06 * rnd()); }
     }
 
     function draw() {
       if (!S) return;
       const c = ctx, f = fc, fw = fb.width, fh = fb.height, Ic = M.min(I, 1.25), pres = .3 + .7 * ss(0, .25, Ic);
-      const fl = .8 + .4 * vn(time * 6.1) * vn(time * 2.3 + 40), FH = S * (.08 + .74 * Ic), hw = S * (.05 + .17 * Ic), tw = S * (.09 + .12 * Ic);
+      const fl = .8 + .4 * vn(time * 6.1) * vn(time * 2.3 + 40), FH = S * M.min(.98, .1 + .85 * Ic), hw = S * (.06 + .19 * Ic), tw = S * (.1 + .13 * Ic);
       c.setTransform(1, 0, 0, 1, 0, 0); c.globalAlpha = 1; c.globalCompositeOperation = "source-over"; c.clearRect(0, 0, W, H);
       c.globalCompositeOperation = "lighter";
       // warm licht rondom + gloed om de vlam
@@ -218,7 +232,7 @@
       f.setTransform(1, 0, 0, 1, 0, 0); f.globalAlpha = 1; f.globalCompositeOperation = "source-over"; f.clearRect(0, 0, fw, fh);
       f.globalCompositeOperation = "lighter";
       for (let e = 0; e < 3; e++) { // omhulsel (rood) + hete kern (geel)
-        const h = FH * (e ? .95 - .4 * (e - 1) : .5) * (.85 + .3 * vn(time * 3.7 + e * 17)), w = hw * (e ? 2.7 - .5 * (e - 1) : 1.7);
+        const h = FH * (e ? .62 - .2 * (e - 1) : .45) * (.85 + .3 * vn(time * 3.7 + e * 17)), w = hw * (e ? 2.9 - .7 * (e - 1) : 1.6);
         f.globalAlpha = pres * (e ? .32 : .5) * fl;
         f.setTransform(w * q / 48, 0, (vn(time * 1.4 + e * 9) - .5) * .25 * h * q / 128, h * q / 128, (cx - fbX) * q, (y0 - fbY) * q);
         f.drawImage(e ? sp.body : sp.hot, -24, -128);
@@ -227,7 +241,7 @@
         if (tLife[j] <= 0) continue;
         const a = tAge[j] / tLife[j], gr = ss(0, .2, a), de = ss(.5, 1, a), al = pres * gr * (1 - de) * (tHot[j] ? .55 : .72);
         if (al < .01) continue;
-        const fk = .7 + .6 * vn(time * 5 + tPh[j]), h = FH * tH[j] * fk * (.5 + .5 * gr) * (1 - .4 * de);
+        const fk = .78 + .44 * vn(time * 5 + tPh[j]), h = FH * tH[j] * fk * (.5 + .5 * gr) * (1 - .4 * de);
         const w = tw * tW[j] * (.6 + .4 * gr) * (1 - .3 * de), lean = (vn(time * 2.6 + tPh[j] * 3) - .5) * .7 - tX[j] * .3, sy = h * q / 128;
         f.globalAlpha = al;
         f.setTransform(w * q / 48, 0, -lean * sy, sy, (cx + tX[j] * hw - fbX) * q, (y0 - de * de * h * .9 - fbY) * q);
@@ -247,17 +261,17 @@
       c.setTransform(1, 0, 0, 1, 0, 0); c.globalCompositeOperation = "source-over"; c.drawImage(bed, bedX, bedY);
       c.globalCompositeOperation = "lighter";
       for (let k = 0, r = S * .065; k < 24; k += 2) {
-        c.globalAlpha = (.08 + .4 * vn(time * .7 + k * 5.3) ** 2) * (1.2 - .4 * Ic);
+        c.globalAlpha = (.1 + .5 * vn(time * .7 + k * 5.3) ** 2) * (1.3 - .5 * Ic);
         c.drawImage(sp.ember, hot[k] - r, hot[k + 1] - r * .5, r * 2, r);
       }
       c.globalAlpha = (.1 + .38 * Ic) * fl; c.drawImage(sp.core, cx - S * .3, y0 - S * .09, S * .6, S * .15);
       // blauwe voetjes
       if (blue) for (let j = 0; j < NT; j += 2) {
         if (tLife[j] <= 0 || M.abs(tX[j]) > .8) continue;
-        const a = tAge[j] / tLife[j], al = ss(0, .25, a) * (1 - ss(.45, .85, a)) * (.2 + .25 * vn(time * 6 + j));
+        const a = tAge[j] / tLife[j], al = ss(0, .25, a) * (1 - ss(.45, .85, a)) * (.22 + .3 * vn(time * 6 + j)) * (1.3 - .5 * Ic);
         if (al < .02) continue;
-        const h = S * (.026 + .03 * vn(time * 5 + tPh[j])), w = S * (.022 + .012 * M.abs(tW[j]));
-        c.globalAlpha = al; c.setTransform(w / 48, 0, (vn(time * 3 + j) - .5) * .4 * h / 128, h / 128, cx + tX[j] * hw * 1.1, y0 + S * .018);
+        const xx = tX[j] * M.max(hw * 1.1, S * .2), h = S * (.028 + .035 * vn(time * 5 + tPh[j])), w = S * (.03 + .014 * M.abs(tW[j]));
+        c.globalAlpha = al; c.setTransform(w / 48, 0, (vn(time * 3 + j) - .5) * .5 * h / 128, h / 128, cx + xx, y0 + S * .03 + xx * xx / S * .5);
         c.drawImage(sp.blue, -24, -128);
       }
       // vonken, uitgerekt langs hun snelheid
