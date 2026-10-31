@@ -416,6 +416,8 @@
 .o-bar-k { font: 700 9px/1 var(--display); letter-spacing: 0.16em; text-transform: uppercase; color: var(--dim); }
 .o-bar-code { font: 900 17px/1 var(--display); letter-spacing: 0.06em; text-shadow: 0 0 14px color-mix(in srgb, var(--acc2) 70%, transparent); }
 .o-bar-ic { width: 17px; height: 17px; color: var(--dim); }
+.o-bar.is-wide .o-bar-k { display: none; }
+.o-bar-chip { min-width: 0; flex-shrink: 1; }
 .o-pill {
   margin-left: auto; display: inline-flex; align-items: center; gap: 7px; height: 32px; padding: 0 12px; border-radius: 999px;
   font: 700 11px/1 var(--display); letter-spacing: 0.06em; text-transform: uppercase; white-space: nowrap;
@@ -441,7 +443,7 @@
   background: linear-gradient(90deg, #ffd166, #ffb547); box-shadow: 0 10px 30px -10px rgba(255, 181, 71, 0.8);
   transition: max-height 0.35s, opacity 0.3s, padding 0.35s, margin 0.35s;
 }
-.o-banner.show { max-height: 80px; opacity: 1; padding: 10px 14px; margin: 0 0 10px; }
+.o-banner.show { max-height: 80px; opacity: 1; padding: 10px 14px; margin: 0 0 20px; }
 .o-banner.bad { background: linear-gradient(90deg, #ff6b81, #ff3b5c); color: #fff; box-shadow: 0 10px 30px -10px rgba(255, 59, 92, 0.85); }
 .o-stage { flex: 1; display: flex; flex-direction: column; view-transition-name: o-stage; }
 .o-view { flex: 1; display: flex; flex-direction: column; gap: 14px; padding-top: 2px; }
@@ -456,7 +458,8 @@
 .o-dock.is-row { flex-direction: row; align-items: stretch; }
 .o-dock.is-row > .o-btn-hero { flex: 1; min-width: 0; }
 .o-dock.is-row > .o-btn-sm { align-self: stretch; flex: none; width: 96px; min-height: 66px; border-radius: 22px; padding: 0 10px; line-height: 1.2; text-align: center; white-space: normal; }
-.o-dock-tools { flex-direction: row; align-items: center; justify-content: center; flex-wrap: wrap; }
+.o-dock-tools { flex-direction: row; align-items: stretch; }
+.o-dock-tools > .o-btn-sm { flex: 1 1 0; min-width: 0; padding: 0 8px; font-size: clamp(11px, 3.3vw, 12.5px); white-space: nowrap; }
 .o-dock-k { font: 700 9.5px/1 var(--display); letter-spacing: 0.16em; text-transform: uppercase; color: var(--dim); margin-right: 2px; }
 .o-wait { display: flex; align-items: center; justify-content: center; gap: 12px; min-height: 58px; padding: 0 18px; border-radius: 20px; color: var(--dim); font-weight: 800; font-size: 14.5px; background: rgba(255, 255, 255, 0.05); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08); text-align: center; }
 .o-dock .o-wait { background: rgba(26, 13, 46, 0.9); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), inset 0 0 0 1px rgba(255, 255, 255, 0.1), 0 12px 30px -12px rgba(0, 0, 0, 0.9); }

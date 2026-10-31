@@ -21,6 +21,11 @@
  *            vote-pick (+data-pid)|vote-submit|close-vote|hints-sheet|guess-input|guess-send|next|again|to-lobby|
  *            exit|player (+data-pid)|kick|confirm|cancel|mode|seg-*|cat], [data-word] (geheime woord op de kaart)
  *   window.DVOnline.debug() → { pub, priv, me, status, outbox }
+ *   window.DVOnline.preview(vm) → render het kamerscherm met een vaste vm (alleen bij ?preview); DVOnline.qrSvg(text) → <svg>
+ *
+ * Preview (design-QA): ?preview=lobby|lobby-host|lobby-wait|reveal|reveal-blind-infiltrant|hints|hints-myturn|vote|
+ *   vote-revote|voted-waiting|guess|guess-me|elim-infiltrant|elim-burger|elim-tie|over-burgers|over-infiltranten|
+ *   connecting|closed|kicked  (+ &open=1 kaart open, &host=1 als host, &me=p3 als andere speler). Zie online/preview.js.
  */
 (() => {
   "use strict";
@@ -373,6 +378,7 @@
     C.room = null;
     unwake();
     if (clearAll) {
+      if (C.session && C.session.isHost) drop("hostRoom");
       drop("session");
       Object.assign(C, { session: null, host: null, pub: null, priv: null, presence: {}, outbox: [], ended: null });
     }
@@ -535,7 +541,9 @@
   }
 
   // QR als SVG: afgeronde modules, eigen finder-patronen en een logo in het midden (EC-niveau Q vangt dat op).
+  let qrN = 0;
   function qrSvg(text) {
+    const gid = "oqrg" + ++qrN;
     const qr = window.qrcode(0, "Q");
     qr.addData(text);
     qr.make();
@@ -543,23 +551,33 @@
     const logo = n <= 29 ? 5 : 7, lo = (n - logo) / 2;
     const inFinder = (r, c) => (r < 8 && c < 8) || (r < 8 && c >= n - 8) || (r >= n - 8 && c < 8);
     const inLogo = (r, c) => r >= lo - 0.5 && r < lo + logo && c >= lo - 0.5 && c < lo + logo;
+    // "Vloeibare" modules: volle vakjes die met donkere buren versmelten; alleen vrije buitenhoeken worden rond.
+    // Geometrisch gelijk aan een gewone QR, dus scanbaar op elke resolutie (kleine overlap e tegen naden).
+    const dark = (r, c) => r >= 0 && c >= 0 && r < n && c < n && qr.isDark(r, c) && !inFinder(r, c) && !inLogo(r, c);
+    const R = 0.42, e = 0.02, f = (v) => +v.toFixed(2);
     let d = "";
     for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) {
-      if (!qr.isDark(r, c) || inFinder(r, c) || inLogo(r, c)) continue;
-      d += `M${c + 0.12} ${r + 0.42}a.3.3 0 0 1 .3-.3h.16a.3.3 0 0 1 .3.3v.16a.3.3 0 0 1-.3.3h-.16a.3.3 0 0 1-.3-.3z`;
+      if (!dark(r, c)) continue;
+      const up = dark(r - 1, c), dn = dark(r + 1, c), lf = dark(r, c - 1), rt = dark(r, c + 1);
+      const tl = !up && !lf ? R : 0, tr = !up && !rt ? R : 0, br = !dn && !rt ? R : 0, bl = !dn && !lf ? R : 0;
+      const x0 = c - (lf ? e : 0), x1 = c + 1 + (rt ? e : 0), y0 = r - (up ? e : 0), y1 = r + 1 + (dn ? e : 0);
+      d += `M${f(x0 + tl)} ${f(y0)}H${f(x1 - tr)}` + (tr ? `a${R} ${R} 0 0 1 ${R} ${R}` : "") +
+        `V${f(y1 - br)}` + (br ? `a${R} ${R} 0 0 1 -${R} ${R}` : "") +
+        `H${f(x0 + bl)}` + (bl ? `a${R} ${R} 0 0 1 -${R} -${R}` : "") +
+        `V${f(y0 + tl)}` + (tl ? `a${R} ${R} 0 0 1 ${R} -${R}` : "") + "z";
     }
     const svg = sv("svg", { viewBox: `-2 -2 ${n + 4} ${n + 4}`, class: "o-qr-svg", role: "img", "aria-label": "QR-code om mee te doen" });
     const defs = sv("defs");
-    const grad = sv("linearGradient", { id: "oqrg", x1: "0", y1: "0", x2: "1", y2: "1" },
+    const grad = sv("linearGradient", { id: gid, x1: "0", y1: "0", x2: "1", y2: "1" },
       sv("stop", { offset: "0", "stop-color": "#7a3cff" }), sv("stop", { offset: "1", "stop-color": "#ff2e93" }));
     defs.append(grad);
     svg.append(defs, sv("path", { d, fill: "#170b2b" }));
     [[0, 0], [0, n - 7], [n - 7, 0]].forEach(([r, c]) => {
-      svg.append(sv("rect", { x: c + 0.5, y: r + 0.5, width: 6, height: 6, rx: 2, fill: "none", stroke: "url(#oqrg)", "stroke-width": 1 }));
-      svg.append(sv("rect", { x: c + 2, y: r + 2, width: 3, height: 3, rx: 1, fill: "#170b2b" }));
+      svg.append(sv("rect", { x: c + 0.5, y: r + 0.5, width: 6, height: 6, rx: 1.5, fill: "none", stroke: `url(#${gid})`, "stroke-width": 1 }));
+      svg.append(sv("rect", { x: c + 2, y: r + 2, width: 3, height: 3, rx: 0.7, fill: "#170b2b" }));
     });
     const lp = lo - 0.2, ls = logo + 0.4;
-    svg.append(sv("rect", { x: lp, y: lp, width: ls, height: ls, rx: 1.6, fill: "url(#oqrg)" }));
+    svg.append(sv("rect", { x: lp, y: lp, width: ls, height: ls, rx: 1.6, fill: `url(#${gid})` }));
     const t = sv("text", { x: n / 2, y: n / 2 + logo * 0.06, "text-anchor": "middle", "dominant-baseline": "central", "font-size": logo * 0.62 });
     t.textContent = "🕵️";
     svg.append(t);
@@ -731,6 +749,7 @@
     const live = v.status === "online";
     const st = v.ended ? "off" : !live ? "wait" : hostOff ? "bad" : "live";
     sh.pill.dataset.state = st;
+    sh.bar.classList.toggle("is-wide", st !== "live"); // lange status → compactere code-chip
     sh.pillT.textContent = { live: "Live", wait: "Verbinden…", bad: "Host offline", off: "Offline" }[st];
     sh.leave.setAttribute("aria-label", v.me.isHost ? "Kamer sluiten" : "Verlaten");
     sh.leave.hidden = !!v.ended;
@@ -1205,7 +1224,7 @@
     const feed = h("section", { class: "o-feed o-rise", style: { "--i": 3 } });
     const skip = btn([icon("skip"), " Beurt overslaan"], "skip", "o-btn-glass o-btn-sm", () => { sfx.tap(); act("skip"); });
     const force = btn([icon("lock"), " Nu stemmen"], "force-vote", "o-btn-glass o-btn-sm", () => { sfx.tap(); act("forceVote"); });
-    const dock = v0.me.isHost ? h("div", { class: "o-dock o-dock-tools" }, h("span", { class: "o-dock-k", text: "Host" }), skip, force) : null;
+    const dock = v0.me.isHost ? h("div", { class: "o-dock o-dock-tools", "aria-label": "Host" }, skip, force) : null;
     const el = h("div", { class: "o-view o-hints" }, head.el, w && h("p", { class: "o-watch-pill o-rise", text: w }), spot, form, order, feed, dock);
     let turnKey = null, timerT = null;
 
@@ -1602,7 +1621,7 @@
     const banner = h("section", { class: "o-win " + (burgers ? "is-b" : "is-i") },
       kicker(`Spel ${pub.gameNo} · uitslag`),
       h("div", { class: "o-win-e", text: burgers ? "😇" : "🕵️" }),
-      h("h1", { class: "o-win-t", "aria-label": lines.join(" ") }, t1, t2),
+      h("h1", { class: "o-win-t", "aria-label": lines.join(" ") }, t1, " ", t2),
       h("p", { class: "o-win-s", text: burgers ? (infs.length > 1 ? "De infiltranten zijn ontmaskerd!" : "De infiltrant is ontmaskerd!") : pub.guess && pub.guess.correct ? "Het woord geraden — wat een bluffer!" : "Niemand had het door. Wat een bluf!" }),
       won === null ? null : h("p", { class: "o-win-me " + (won ? "is-won" : "is-lost"), text: won ? `Jij wint! +${myDelta} 🎉` : `Verloren… ${myDelta ? "+" + myDelta + " voor goed stemmen" : "volgende keer beter"} 😅` }));
     const reveal = h("section", { class: "o-glass o-card o-infs o-rise", style: { "--i": 1 } },
@@ -1683,7 +1702,7 @@
     }
     const parseCode = (t) => { const m = /join=([A-Za-z]{4})/.exec(t); return (m ? m[1] : t).toUpperCase().replace(/[^A-Z]/g, "").slice(0, 4); };
     boxes.forEach((b, i) => {
-      b.addEventListener("focus", () => setTimeout(() => b.select(), 0));
+      b.addEventListener("focus", () => setTimeout(() => { if (document.activeElement === b) b.select(); }, 0));
       b.addEventListener("input", () => {
         const v = b.value.toUpperCase().replace(/[^A-Z]/g, "");
         if (v.length > 1) { // plakken / autocorrect: verdelen over de vakjes
@@ -1733,7 +1752,7 @@
       pe, setCode, err, joinB, codebox, boxes,
       refresh() {
         // Hervat-kaart als er nog een kamer loopt
-        const s = C.session || store.get("session", null);
+        const s = liveSession();
         const k = s && s.code ? s.code + ":" + (s.isHost ? 1 : 0) : "";
         if (resumeBox.dataset.k !== k) {
           resumeBox.dataset.k = k;
@@ -1746,6 +1765,7 @@
       },
     };
   }
+  const liveSession = () => (C.session && !C.ended ? C.session : store.get("session", null));
   function refreshHome() {
     const root = $("#olHome");
     if (!root) return;
@@ -1762,7 +1782,8 @@
     return Object.assign(p, { name: p.name.trim() });
   }
   async function leaveOld(newCode) {
-    const old = C.session || store.get("session", null);
+    if (C.ended) await teardown(true); // kamer is al voorbij: gewoon opruimen
+    const old = liveSession();
     if (!old) return true;
     const ok = await ask({ emoji: "🔁", title: "Andere kamer?", text: `Je zit nog in kamer ${old.code}${old.isHost ? " (als host)" : ""}. Die ${old.isHost ? "sluiten" : "verlaten"} en ${newCode ? "naar " + newCode : "een nieuwe maken"}?`, ok: old.isHost ? "Sluiten en door" : "Verlaten en door" });
     if (!ok) return false;
@@ -1790,7 +1811,8 @@
     const prof = requireName();
     if (!prof || home.joinB.disabled) return;
     if (code.length !== 4) { shake(home.codebox); home.err.textContent = "Vul de 4 letters van de kamercode in"; return; }
-    const old = C.session || store.get("session", null);
+    if (C.ended) await teardown(true);
+    const old = liveSession();
     if (old && old.code === code) { if (resume()) { location.hash = "room"; return; } }
     if (old && !(await leaveOld(code))) return;
     busy(home.joinB, "Kamer zoeken…");
@@ -1820,7 +1842,7 @@
     if (pendingJoin && home) {
       home.setCode(pendingJoin.code);
       const p = getProfile();
-      const other = C.session || store.get("session", null);
+      const other = liveSession();
       if (p.name.trim() && !pendingJoin.tried && (!other || other.code === pendingJoin.code)) {
         pendingJoin.tried = true;
         setTimeout(() => onJoin(pendingJoin.code, pendingJoin.b), 350);
@@ -1868,6 +1890,7 @@
       cur.key = null;
       renderRoom(previewVm);
     },
+    qrSvg, // design-QA: QR-SVG voor willekeurige tekst
     AVATARS, NEON,
   };
 })();

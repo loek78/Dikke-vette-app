@@ -151,7 +151,7 @@
 .sn-pip.cur{color:var(--glow,#ffe7b8);border-color:rgba(255,194,71,.55);box-shadow:0 0 14px rgba(255,106,26,.35)}
 .sn-pip.win{color:#2a0d02;background:linear-gradient(180deg,var(--flame,#ffc247),var(--ember,#ff6a1a));border-color:transparent;box-shadow:0 0 14px rgba(255,106,26,.5)}
 .sn-pip.lose{color:#d7ecff;background:rgba(40,70,110,.55);border-color:rgba(159,211,255,.45)}
-.sn-pip.bad{color:#9fd3ff;background:rgba(10,20,34,.75);border-color:rgba(159,211,255,.3);text-decoration:line-through}
+.sn-pip.bad{color:#9fd3ff;background:rgba(10,20,34,.75);border-color:rgba(159,211,255,.3)}
 .sn-vorst{display:flex;align-items:center;gap:6px;height:30px;padding:0 11px;border-radius:99px;white-space:nowrap;
   font:800 12px/1 system-ui,sans-serif;color:#cfe8ff;background:rgba(14,28,46,.7);border:1px solid rgba(159,211,255,.35);
   box-shadow:0 0 16px rgba(90,169,255,.18)}
@@ -162,6 +162,7 @@
 .sn-msg .m2{margin-top:8px;font-size:13px;letter-spacing:.16em;text-transform:uppercase;color:var(--ash,#b8a99a)}
 .sn-msg.hide{opacity:0;transform:translateY(10px)}
 @keyframes sn-breathe{0%,100%{opacity:.55;letter-spacing:0}50%{opacity:1;letter-spacing:.02em}}
+.sn-fx{position:absolute;inset:0;z-index:3;overflow:hidden;pointer-events:none}
 .sn-bang{position:absolute;left:0;right:0;z-index:3;text-align:center;pointer-events:none;opacity:0}
 .sn-bang b{display:block;font:900 clamp(64px,22vw,96px)/1 "Unbounded",system-ui,sans-serif;color:#fff6d8;
   text-shadow:0 0 30px rgba(255,194,71,.95),0 0 70px rgba(255,106,26,.9),0 5px 0 #8a2a04}
@@ -179,6 +180,9 @@
   border:1px solid rgba(255,194,71,.22);box-shadow:inset 0 1px 0 rgba(255,231,184,.1),0 18px 40px rgba(0,0,0,.55);
   -webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
 .sn-card.on{opacity:1;transform:translate(-50%,0)}
+.sn-card.live{transition:opacity .12s,transform .18s ease-out}
+.sn-card.live .sn-trk i{transition:none}
+.sn-row.hit .sn-trk i.gh{background:linear-gradient(90deg,#5aa9ff,#cfe8ff);box-shadow:0 0 16px rgba(120,190,255,.9)}
 .sn-card.cold{border-color:rgba(159,211,255,.35);background:linear-gradient(180deg,rgba(18,28,42,.9),rgba(9,13,20,.94))}
 .sn-ctop{display:flex;align-items:baseline;justify-content:space-between;gap:10px}
 .sn-crd{font:800 11px/1 system-ui,sans-serif;letter-spacing:.2em;text-transform:uppercase;color:var(--ash,#b8a99a)}
@@ -233,6 +237,7 @@
   padding:10px 16px;border-radius:99px;background:rgba(23,16,11,.7);border:1px solid rgba(255,231,184,.12)}
 .sn-wait i{width:10px;height:10px;border-radius:50%;background:var(--ember,#ff6a1a);box-shadow:0 0 12px var(--ember,#ff6a1a);animation:sn-dot 1s ease-in-out infinite}
 @keyframes sn-dot{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(.7);opacity:.6}}
+@media (max-width:374px){.sn-vl{display:none}.sn-pip{min-width:46px;padding:0 7px}}
 @media (max-height:640px){.sn-board{padding:9px 12px 11px}.sn-big{font-size:58px}.sn-howto{gap:9px}}
 @media (prefers-reduced-motion:reduce){.sn-wait i,.sn-msg .m1.wait{animation:none}.sn-bang.on{animation:none}.sn-bang.hit{opacity:0}}
 `;
@@ -285,7 +290,7 @@
     const pips = h("div", "sn-pips");
     const pipEls = Array.from({ length: ROUNDS }, (_, i) => { const p = h("div", "sn-pip", String(i + 1)); pips.appendChild(p); return p; });
     const vchip = h("div", "sn-vorst");
-    vchip.append(document.createTextNode("❄ De Vorst "), h("b", null, V + " ms"));
+    vchip.append(document.createTextNode("❄"), h("span", "sn-vl", "De Vorst"), h("b", null, V + " ms"));
     hud.append(pips, vchip);
     hud.style.opacity = "0";
     root.appendChild(hud);
@@ -296,19 +301,21 @@
     const bangEl = h("div", "sn-bang");
     const bangB = h("b"), bangS = h("span");
     bangEl.append(bangB, bangS);
-    root.appendChild(bangEl);
+    const fx = h("div", "sn-fx"); // knipt de schaal-animaties af binnen het speelveld
+    fx.appendChild(bangEl);
+    root.appendChild(fx);
     const card = h("div", "sn-card");
     root.appendChild(card);
 
     // --- Howto ---
     const how = h("div", "sn-scr sn-howto");
-    how.appendChild(h("div", "sn-kicker", "Duel met de Vorst · " + c.name + " · 3 rondes"));
+    how.appendChild(h("div", "sn-kicker", "Duel met de Vorst · " + c.name));
     how.appendChild(h("h2", "sn-title sn-disp", "Snel"));
     how.appendChild(h("p", "sn-text", "Wacht tot het blok in de kachel knalt en tik dan zo snel je kan, ergens op het scherm: te vroeg is af."));
     const leg = h("div", "sn-legend");
     const chip = (cls, txt, bold) => { const x = h("span", "sn-chip" + (cls ? " " + cls : "")); x.appendChild(document.createTextNode(txt + " ")); if (bold) x.appendChild(h("b", null, bold)); leg.appendChild(x); };
     chip("ice", "De Vorst tikt in", V + " ms");
-    chip("", "te vroeg =", "ronde kwijt");
+    chip("", "3 rondes · te vroeg =", "kwijt");
     if (d >= 2) chip("", "het vuur", d >= 3 ? "liegt vaak" : "doet soms alsof");
     how.appendChild(leg);
     const startBtn = h("button", "sn-btn", "Start");
@@ -543,11 +550,11 @@
       tongues.forEach((tg, i) => {
         const x0 = cx - whb + tg.u * whb * 2, n = nz(ts, tg.a, tg.b, tg.p, tg.q);
         const hh = wh * tg.h * (0.45 + 0.55 * Math.min(1.5, k)) * (0.8 + 0.25 * n), w = whb * tg.w * (0.9 + 0.35 * k);
-        fl.push([x0, hh, w, n * w * 0.9 + Math.sin(ts * 1.3 + i) * 3, i % 4 === 1]);
+        fl.push([x0, hh, w, n * w * 0.9 + Math.sin(ts * 1.3 + i) * 3]);
       });
       fg.save(); fg.setTransform(1, 0, 0, 1, 0, 0); fg.clearRect(0, 0, fcv.width, fcv.height); fg.restore();
       fg.globalCompositeOperation = "lighter";
-      fl.forEach(([x0, hh, w, sway, blue]) => flame(fg, x0, baseY, w * 1.5, hh * 1.08, sway, 0.75 + 0.25 * Math.min(1, k), blue));
+      fl.forEach(([x0, hh, w, sway]) => flame(fg, x0, baseY, w * 1.5, hh * 1.08, sway, 0.75 + 0.25 * Math.min(1, k), false));
       g.globalCompositeOperation = "lighter";
       g.drawImage(fcv, L.fBox[0], L.fBox[1], L.fBox[2], L.fBox[3]);
       fl.forEach(([x0, hh, w, sway]) => flame(g, x0 + sway * 0.15, baseY, w * 0.45, hh * 0.62, sway * 0.6, 0.35 + 0.25 * Math.min(1, k), false));
@@ -693,8 +700,9 @@
         const el = ts - waitStart, r = rounds[round];
         while (fakeIdx < r.fakes.length && el >= r.fakes[fakeIdx].t) fake(r.fakes[fakeIdx++].kind);
         if (el >= r.delay) bang(ts);
-      } else if (phase === "bang" && ts - bangTs > SLOW) {
-        record(null, "slow");
+      } else if (phase === "bang") {
+        if (ts - bangTs > SLOW) record(null, "slow");
+        else updateRace(ts - bangTs);
       }
 
       // uitdempen
@@ -751,7 +759,7 @@
         if (i < round || (i === round && (phase === "show" || phase === "done"))) {
           const t = times[i];
           p.classList.add(t === null ? "bad" : t < V ? "win" : "lose");
-          p.textContent = t === null ? (tags[i] === "slow" ? "traag" : "vroeg") : String(t);
+          p.textContent = t === null ? "✕" : String(t);
         } else {
           p.textContent = String(i + 1);
           if (i === round && phase !== "done") p.classList.add("cur");
@@ -764,6 +772,7 @@
       waitStart = performance.now();
       ignoreUntil = waitStart + 220;
       fakeIdx = 0;
+      cardEls = null;
       card.classList.remove("on");
       bangEl.className = "sn-bang";
       setMsg(WAITS[round % WAITS.length], "Ronde " + (round + 1) + " van " + ROUNDS + " · tik pas bij de knal", true);
@@ -785,6 +794,7 @@
       bangEl.className = "sn-bang on";
       bangB.textContent = "KNAL!"; bangS.textContent = "TIK!";
       setMsg("", "");
+      showRace();
       buzz(40);
       beep(70, 0.28, "square", 0.16); beep(140, 0.14, "sawtooth", 0.12); beep(2100, 0.03, "square", 0.07);
     }
@@ -828,31 +838,67 @@
       }, delay);
     }
 
-    function barRow(cls, label, value, pct, fillCls) {
-      const row = h("div", "sn-row" + (cls ? " " + cls : ""));
-      const trk = h("div", "sn-trk"), fill = h("i", fillCls);
-      trk.appendChild(fill);
-      row.append(h("span", null, label), trk, h("b", null, value));
-      later(() => { fill.style.width = (pct * 100).toFixed(1) + "%"; }, 40);
-      return row;
-    }
+    // Rondekaart: tijdens de knal een live race (jouw balk tegen de spookbalk van de Vorst), na de tik de uitslag.
+    let cardEls = null, vorstHit = false;
     const scale = (t) => Math.min(1, t / Math.max(600, V * 1.8));
-
-    function showCard(t, tag, win) {
+    function buildCard() {
       card.textContent = "";
-      card.className = "sn-card" + (win ? "" : " cold");
-      const top = h("div", "sn-ctop");
-      top.appendChild(h("span", "sn-crd", "Ronde " + (round + 1)));
-      const big = h("b", "sn-cms");
-      if (t !== null) { big.textContent = String(t); big.appendChild(h("small", null, "ms")); }
-      else big.textContent = tag === "slow" ? "Bevroren" : "Te vroeg";
-      top.appendChild(big);
-      card.appendChild(top);
-      const vs = t === null ? (tag === "slow" ? "Te laat. De Vorst pakt de ronde." : "Gegokt. De Vorst pakt de ronde.")
+      const top = h("div", "sn-ctop"), big = h("b", "sn-cms"), vs = h("div", "sn-cvs");
+      top.append(h("span", "sn-crd", "Ronde " + (round + 1)), big);
+      const row = (cls, label, fillCls) => {
+        const r = h("div", "sn-row" + (cls ? " " + cls : "")), trk = h("div", "sn-trk"), fill = h("i", fillCls), val = h("b");
+        trk.appendChild(fill); r.append(h("span", null, label), trk, val);
+        return { r, fill, val };
+      };
+      const me = row("", "Jij", "me"), vo = row("vr", "Vorst", "gh");
+      card.append(top, vs, me.r, vo.r);
+      cardEls = { big, vs, me, vo };
+    }
+    function setBig(text, unit) {
+      cardEls.big.textContent = text;
+      if (unit) cardEls.big.appendChild(h("small", null, unit));
+    }
+    function showRace() {
+      buildCard();
+      vorstHit = false;
+      card.className = "sn-card live";
+      setBig("0", "ms");
+      cardEls.vs.textContent = "De Vorst tikt in " + V + " ms…";
+      cardEls.vo.val.textContent = "";
+      void card.offsetWidth;
+      card.classList.add("on");
+    }
+    function updateRace(el) {
+      if (!cardEls) return;
+      const e = Math.max(0, Math.round(el));
+      setBig(String(e), "ms");
+      cardEls.me.fill.style.width = (scale(e) * 100).toFixed(1) + "%";
+      cardEls.vo.fill.style.width = (scale(Math.min(e, V)) * 100).toFixed(1) + "%";
+      if (e >= V && !vorstHit) {
+        vorstHit = true;
+        cardEls.vo.val.textContent = String(V);
+        cardEls.vo.r.classList.add("hit");
+        cardEls.vs.textContent = "De Vorst heeft getikt!";
+        card.classList.add("cold");
+        frostBoost = Math.max(frostBoost, 0.35); eyesK = 1.2;
+        beep(1250, 0.06, "sine", 0.05);
+      }
+    }
+    function showCard(t, tag, win) {
+      if (!cardEls || tag === "early") buildCard();
+      card.className = "sn-card" + (win ? "" : " cold") + (card.classList.contains("on") ? " on" : "");
+      if (t !== null) setBig(String(t), "ms");
+      else setBig(tag === "slow" ? "Bevroren" : "Te vroeg");
+      cardEls.vs.textContent = t === null ? (tag === "slow" ? "Te laat. De Vorst pakt de ronde." : "Gegokt. De Vorst pakt de ronde.")
         : win ? (V - t >= 60 ? "Sneller dan de Vorst! Ruim." : "Sneller dan de Vorst!") : t - V <= 25 ? "Net te traag. Het scheelde een ijskristal." : "De Vorst was sneller.";
-      card.appendChild(h("div", "sn-cvs", vs));
-      card.appendChild(barRow("", "Jij", t === null ? "✕" : t + "", t === null ? 0 : scale(t), "me"));
-      card.appendChild(barRow("vr", "Vorst", V + "", scale(V), "gh"));
+      cardEls.me.val.textContent = t === null ? "✕" : String(t);
+      cardEls.vo.val.textContent = String(V);
+      cardEls.vo.r.classList.toggle("hit", !win);
+      later(() => {
+        if (!cardEls) return;
+        cardEls.me.fill.style.width = (t === null ? 0 : scale(t) * 100).toFixed(1) + "%";
+        cardEls.vo.fill.style.width = (scale(V) * 100).toFixed(1) + "%";
+      }, 40);
       void card.offsetWidth;
       card.classList.add("on");
     }
