@@ -761,6 +761,7 @@
 
   // ---------- Router voor fases ----------
   let cur = { key: null, view: null, name: null };
+  let vtBusy = false;
   let latest = null;
   function pickView(v) {
     if (v.ended) return { name: "ended", key: "ended:" + v.ended };
@@ -810,10 +811,17 @@
       if (view.mounted) view.mounted(lv);
       window.scrollTo(0, 0);
     };
-    const vt = document.startViewTransition && !reduced() && !document.hidden && sh.stage.childElementCount && isActive("room");
-    if (vt) {
-      try { document.startViewTransition(() => { try { apply(); } catch (e) { console.error(e); } }); } catch (e) { apply(); }
-    } else apply();
+    // View Transition alleen als er geen andere loopt (snel na elkaar → direct wisselen, geen "skipped"-fouten)
+    const vt = document.startViewTransition && !vtBusy && !reduced() && !document.hidden && sh.stage.childElementCount && isActive("room");
+    if (!vt) { apply(); return; }
+    try {
+      const t = document.startViewTransition(() => { try { apply(); } catch (e) { console.error(e); } });
+      vtBusy = true;
+      const done = () => { vtBusy = false; };
+      t.ready.catch(() => {});
+      t.updateCallbackDone.catch(() => {});
+      t.finished.then(done, done);
+    } catch (e) { vtBusy = false; apply(); }
   }
 
   // =========================================================
@@ -1335,7 +1343,9 @@
             b.setAttribute("aria-checked", sel === p.pid ? "true" : "false");
           });
           grid.classList.toggle("has-sel", !!sel);
-          grid.style.setProperty("--cols", String(targets.length <= 2 || targets.length === 4 ? 2 : 3));
+          const two = targets.length <= 2 || targets.length === 4;
+          grid.style.setProperty("--cols", two ? "2" : "3");
+          grid.classList.toggle("is-big", two);
           const sp = sel && P(pub, sel);
           submit.classList.toggle("is-off", !sp);
           submit.querySelector(".o-btn-sub").textContent = sp ? `Op ${sp.name} — dit is definitief` : "Tik op wie je verdenkt";
@@ -1620,7 +1630,7 @@
       }));
     const again = v0.me.isHost ? btn(h("span", { class: "o-btn-l" }, icon("play"), h("span", { text: "Nog een potje" })), "again", "o-btn-primary o-btn-hero", () => { sfx.whoosh(); act("next"); act("start"); }) : null;
     const lobby = v0.me.isHost ? btn("Naar de lobby", "to-lobby", "o-btn-glass o-btn-sm", () => { sfx.tap(); act("next"); }) : null;
-    const dock = h("div", { class: "o-dock" }, again || waitLine("Wachten op de host…"), lobby);
+    const dock = h("div", { class: "o-dock" + (lobby ? " is-row" : "") }, lobby, again || waitLine("Wachten op de host…"));
     const el = h("div", { class: "o-view o-over " + (burgers ? "is-b" : "is-i") }, banner, reveal, words, board, dock);
     return {
       el,

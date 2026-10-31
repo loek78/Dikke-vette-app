@@ -33,7 +33,7 @@ const minutes = (hhmm) => {
 
 // Alle stappen met hun plek, plus elke tekst die op een scherm komt.
 function* allSteps() {
-  for (const [ci, ch] of story.chapters.entries()) for (const [si, st] of ch.steps.entries()) yield { ci, si, ch, st, at: `${ch.id}[${si}]` };
+  for (const ch of story.chapters) for (const [si, st] of ch.steps.entries()) yield { si, ch, st, at: `${ch.id}[${si}]` };
 }
 function allTexts() {
   const out = [["titel", story.title], ["ondertitel", story.subtitle]];
@@ -271,6 +271,12 @@ test("placeholders worden echt gebruikt", () => {
   const count = (p) => all.split(`{${p}}`).length - 1;
   for (const p of ["X", "MVP", "VUUR"]) assert.ok(count(p) >= 2, `{${p}} ${count(p)}×`);
   for (const p of ["A", "B", "ALLEN"]) assert.ok(count(p) >= 1, `{${p}} ontbreekt`);
+  let miniSeen = false; // {MVP} = beste van de laatste minigame: pas bruikbaar in/na de eerste minigame
+  for (const { st, at } of allSteps()) {
+    if (st.type === "mini") miniSeen = true;
+    const own = st.type === "mini" ? [st.intro] : (st.lines || []).concat(st.line || []).map((l) => l.text).concat(st.prompt || []);
+    if (!miniSeen || st.type === "mini") for (const txt of own) assert.doesNotMatch(txt, /\{MVP\}/, `${at}: {MVP} voor er een minigame was`);
+  }
   for (const l of allLines()) {
     if (l.who === "A") assert.doesNotMatch(l.text, /\{A\}/, "speler A noemt zichzelf niet");
     if (l.who === "B") assert.doesNotMatch(l.text, /\{B\}/, "speler B noemt zichzelf niet");
@@ -322,7 +328,7 @@ test("elke flag in een if/cond/ifFlag wordt eerder gezet, met een bestaande waar
 });
 
 test("elke keuze heeft gevolgen: elke optie verandert het vuur of een latere stap", () => {
-  // "f=v": iets gebeurt als f gelijk is aan v. "f!=w": iets gebeurt als f níét w is (ne, of de base van een ifFlag).
+  // "f=v": iets gebeurt als f gelijk is aan v. "f!=w" (ne, of de base van een ifFlag) splitst alle waarden van f.
   const eq = new Set(), ne = [];
   for (const { st } of allSteps()) {
     if (st.if && st.if.flag) "eq" in st.if ? eq.add(`${st.if.flag}=${st.if.eq}`) : ne.push([st.if.flag, st.if.ne]);
@@ -331,7 +337,7 @@ test("elke keuze heeft gevolgen: elke optie verandert het vuur of een latere sta
     }
   }
   for (const e of story.endings) if (e.cond.flag) eq.add(`${e.cond.flag}=${e.cond.eq}`);
-  const matters = (f, v) => eq.has(`${f}=${v}`) || ne.some(([g, w]) => g === f && w !== v);
+  const matters = (f, v) => eq.has(`${f}=${v}`) || ne.some(([g]) => g === f); // bij "ne" verschillen beide kanten
   for (const { st, at } of allSteps()) {
     if (st.type !== "choice") continue;
     for (const o of st.options) {
@@ -361,6 +367,34 @@ test("elke voorwaardelijke stap en elke optie komt in een pad voor", () => {
     if (st.type === "choice") st.options.forEach((o, i) => assert.ok(duo.shown.has(`${ch.id}[${si}].${i}`), `${at}: optie ${i} nooit gekozen`));
   }
   assert.ok(!duo.shown.has(`hout[1]`) && trio.shown.has(`hout[1]`), "de scène voor 3+ spelers verschijnt alleen bij 3+");
+});
+
+test("een retry is altijd te overleven (checkpoint 3, burn x1.5, elke muntworp)", () => {
+  // SPEC-3 §3: na "Het vuur is uit" begint het hoofdstuk opnieuw met max(3, …) vuur. Ook als de engine de burn dan
+  // opnieuw toepast (op "pittig" x1.5) moet goed spel het hoofdstuk halen, wat de gesplitste keuzes ook worden.
+  const clamp = (n) => Math.max(0, Math.min(story.maxFire, n));
+  const flagSets = [{}];
+  for (const { st } of allSteps()) {
+    if (st.type !== "choice") continue;
+    const next = [];
+    for (const f of flagSets) for (const o of st.options) next.push(Object.assign({}, f, o.set));
+    flagSets.splice(0, flagSets.length, ...next);
+  }
+  for (const ch of story.chapters) {
+    for (const flags0 of flagSets) {
+      let states = [{ fire: clamp(3 - Math.round(ch.burn * 1.5)), flags: flags0, players: 2 }];
+      for (const s of ch.steps) {
+        states = states.flatMap((st) => {
+          if (!passes(s.if, st)) return [st];
+          if (s.type === "choice") return s.options.map((o) => ({ fire: clamp(st.fire + (o.fire || 0)), flags: Object.assign({}, st.flags, o.set), players: 2 }));
+          if (s.type === "mini") return [Object.assign({}, st, { fire: clamp(st.fire + Math.max(...MINI_LOGS[s.id])) })];
+          if (s.type === "fire") return [Object.assign({}, st, { fire: clamp(st.fire + s.delta) })];
+          return [st];
+        });
+        for (const st of states) assert.ok(st.fire >= 1, `${ch.id}: retry dooft bij stap ${ch.steps.indexOf(s)} (flags ${JSON.stringify(st.flags)})`);
+      }
+    }
+  }
 });
 
 test("1–3 scènes per hoofdstuk, op elk pad (2 en 3 spelers)", () => {

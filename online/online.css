@@ -32,8 +32,8 @@
   transition: --a1 1.4s ease, --a2 1.4s ease, --a3 1.4s ease, --a4 1.4s ease;
 }
 .ol [hidden] { display: none !important; }
-/* Unbounded zet "IJ" bij lang="nl" om in een ligatuur (JIJ leest als "JU") */
-.ol, .t-online { font-feature-settings: "locl" 0; }
+/* Unbounded zet "IJ" bij lang="nl" om in een ligatuur (JIJ leest als "JU"); de font-shorthand reset dit, dus !important */
+.ol, .ol *, .t-online, .t-online * { font-feature-settings: "locl" 0 !important; }
 
 /* Fase-tinten: lobby violet/cyaan, reveal roze, hints cyaan, stemmen rood/oranje, uitslag groen of rood */
 .ol[data-screen="online"] { --a1: #8b5cff; --a2: #ff2e93; --a3: #22e6ff; --a4: #4b1fd6; }
@@ -150,7 +150,13 @@
 .o-btn-l .o-ic { width: 20px; height: 20px; }
 .o-btn-sub { font: 700 12px/1.2 ui-rounded, system-ui, sans-serif; opacity: 0.82; letter-spacing: 0; }
 .o-btn:disabled, .o-btn.is-off { filter: saturate(0.35) brightness(0.85); opacity: 0.6; }
+.o-btn-primary:disabled, .o-btn-primary.is-off {
+  opacity: 1; filter: none; color: rgba(255, 246, 255, 0.5); text-shadow: none;
+  background: linear-gradient(135deg, #34254f, #241a3a);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
 .o-btn:disabled::before, .o-btn.is-off::before { animation: none; opacity: 0; }
+.o-btn-primary.is-done { opacity: 1; }
 .o-btn-soft { filter: saturate(0.75); }
 .o-btn.is-done { opacity: 0.75; }
 .o-btn.is-busy { opacity: 0.9; }
@@ -237,7 +243,7 @@
     linear-gradient(135deg, #1c0b36, #0e0520);
 }
 @keyframes o-turn { to { rotate: 360deg; } }
-.t-online .tile-kicker { font: 700 10px/1.3 "Unbounded", system-ui, sans-serif; letter-spacing: 0.14em; text-transform: uppercase; color: rgba(255, 246, 255, 0.72); max-width: 64%; }
+.t-online .tile-kicker { font: 700 10px/1.3 "Unbounded", system-ui, sans-serif; letter-spacing: 0.14em; text-transform: uppercase; color: rgba(255, 246, 255, 0.72); max-width: 64%; text-wrap: balance; }
 .t-online .tile-title {
   font-size: clamp(26px, 8vw, 34px); line-height: 1; letter-spacing: -0.02em;
   background: linear-gradient(180deg, #fff 30%, #e2d4ff 70%, #b99cff); -webkit-background-clip: text; background-clip: text; color: transparent;
@@ -446,6 +452,9 @@
   background: linear-gradient(180deg, rgba(11, 4, 22, 0), rgba(11, 4, 22, 0.82) 36%, rgba(11, 4, 22, 0.96));
 }
 .o-dock > .o-btn-sm { align-self: center; }
+.o-dock.is-row { flex-direction: row; align-items: stretch; }
+.o-dock.is-row > .o-btn-hero { flex: 1; min-width: 0; }
+.o-dock.is-row > .o-btn-sm { align-self: stretch; flex: none; width: 96px; min-height: 66px; border-radius: 22px; padding: 0 10px; line-height: 1.2; text-align: center; white-space: normal; }
 .o-dock-tools { flex-direction: row; align-items: center; justify-content: center; flex-wrap: wrap; }
 .o-dock-k { font: 700 9.5px/1 var(--display); letter-spacing: 0.16em; text-transform: uppercase; color: var(--dim); margin-right: 2px; }
 .o-wait { display: flex; align-items: center; justify-content: center; gap: 12px; min-height: 58px; padding: 0 18px; border-radius: 20px; color: var(--dim); font-weight: 800; font-size: 14.5px; background: rgba(255, 255, 255, 0.05); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08); text-align: center; }
@@ -791,6 +800,9 @@
   box-shadow: inset 0 0 0 2px #fff, 0 0 0 4px color-mix(in srgb, var(--acc) 55%, transparent), 0 18px 40px -14px var(--acc-glow);
 }
 .o-vcard-av { position: relative; }
+.o-vgrid.is-big .o-vcard { padding: 22px 8px 16px; gap: 11px; }
+.o-vgrid.is-big .o-vcard .o-av { --s: 88px; }
+.o-vgrid.is-big .o-vcard-n { font-size: 16px; }
 .o-vcard-ok { position: absolute; right: -6px; top: -6px; width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; color: #fff; background: var(--red); box-shadow: 0 0 0 3px #1a0d2e; transform: scale(0) rotate(-90deg); transition: transform 0.45s cubic-bezier(0.25, 1.8, 0.4, 1); }
 .o-vcard-ok .o-ic { width: 15px; height: 15px; stroke-width: 3.2; }
 .o-vcard.on .o-vcard-ok { transform: scale(1) rotate(0); }

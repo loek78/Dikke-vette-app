@@ -5,13 +5,15 @@
 //
 // Flags: elke keuze zet er één, en die doet er later toe:
 //   belofte ja|nee         20:00  nee: +1 nu. ja: herinnering om 02:00, en nodig voor het einde "Legende"
-//   bijl    grote|takken   21:00  moeilijkheid van de bijl (3 of 1); grote bijl geeft +1 na afloop
-//   kleed   deur|kachel    22:00  deur: +1 om 00:00 (geen mist binnen). kachel: +1 om 04:00 (warm kleed)
+//   bijl    grote|takken   21:00  bijl op moeilijkheid 3 of 1; daarna +1 (dikke blokken) of -1 (natte takjes)
+//   kleed   deur|kachel    22:00  deur: de Mist blijft om 00:00 buiten (anders -1). kachel: +1 om 04:00
 //   kist    hout|boek      23:00  hout: +2 meteen. boek: scène en +1 bij dageraad, plus het einde "In het Wachtboek"
-//   mist    dicht|gekeken  00:00  gekeken: -1 nu, makkelijkere echo, handafdrukken bij dageraad
-//   aanbod  ja|nee         02:00  ja: +3 nu en een makkelijker duel, maar -2 om 04:00, -1 om 06:00 en einde "Een koude
-//                                 handdruk" (gaat voor alles). nee: +1 nu
+//   mist    dicht|gekeken  00:00  gekeken: makkelijkere echo, -1 erna, handafdrukken bij dageraad
+//   aanbod  ja|nee         02:00  ja: +3 nu en een makkelijker duel, -3 na de verhalen van 04:00, einde "Een koude
+//                                 handdruk" (gaat voor alles). nee: het zware duel
 //   fles    nu|later       04:00  +1 nu, of +1 bij dageraad
+// Vuur: burn 1 per hoofdstuk (proloog 0) en verlies (fire < 0) staat altijd ná de minigame van dat hoofdstuk. Zo is
+// een retry vanaf 3 vuur altijd te halen, ook als de burn op "pittig" (x1.5) opnieuw meetelt.
 // Extra velden naast SPEC-3 §2 (mag je negeren): chapter.tagline (regel op de titelkaart), ending.good (krijgt de
 // Vuurwachters-badge).
 // UMD: in de browser window.DV_STORY, in Node module.exports (ook bruikbaar als { DV_STORY }).
@@ -95,7 +97,7 @@
         ], { players: ">=3" }),
         choice("bijl", "Achter het schuurtje: een enorme oude bijl en een handbijl. Wat wordt het?", [
           opt("De grote bijl. Echte blokken.", "Zwaar werk. Maar dikke blokken branden langer.", { bijl: "grote" }),
-          opt("De handbijl. Dunne takken.", "Een stuk makkelijker. Alleen zijn takjes zo op.", { bijl: "takken" }),
+          opt("De handbijl. Dunne takken.", "Een stuk makkelijker. Maar takjes uit de sneeuw zijn nat.", { bijl: "takken" }),
         ]),
         mini("bijl", { base: 1, ifFlag: { bijl: "grote" }, then: 3 }, {
           intro: "Ik kijk mee door het raampje. Hakken als het gloeit, recht in het hart van het blok. Niet in je voet.",
@@ -104,6 +106,7 @@
           lose: "Meer splinters dan blokken. Ergens in het donker klapt de Vorst. Zachtjes. Beleefd.",
         }),
         fire(1, GL("Kijk die kanjers van blokken. Daar kan ik een uur op teren. Twee, als ik me inhoud. Ik hou me niet in."), is("bijl", "grote")),
+        fire(-1, GL("Zijn die takjes nat? Ze zijn nát. Wie gooit er nou nat hout op mij? Ik zak in van pure belediging."), is("bijl", "takken")),
       ],
     },
     {
@@ -138,7 +141,7 @@
       ],
     },
     {
-      id: "kist", time: "23:00", title: "De kist op zolder", tagline: "Het goeie spul ligt boven.", burn: 2,
+      id: "kist", time: "23:00", title: "De kist op zolder", tagline: "Het goeie spul ligt boven.", burn: 1,
       steps: [
         scene("tense", [
           VT("De houtmand is wéér leeg. De spin kijkt jullie verwijtend aan."),
@@ -156,6 +159,7 @@
           meh: "Open. Het duurde even, maar wie ben ik om te zeuren? Iemand die heel oud is, dat ben ik.",
           lose: "Uiteindelijk wrikt {X} de kist open met de pook. Het werkt. Het is barbaars. Het kostte tijd.",
         }),
+        fire(-1, GL("Schiet eens op daarboven! Ik zak hier in. Ik ben al een heel blok kwijt van het wachten.")),
         scene("warm", [
           VT("In de kist ligt eikenhout, zo droog als een oude mop. Daaronder een schrift met een leren kaft."),
           VT("Op de kaft staat in schuine letters: ‘Wachtboek’. Binnenin: namen. Rijen en rijen namen, met jaartallen erbij."),
@@ -176,7 +180,7 @@
       ],
     },
     {
-      id: "mist", time: "00:00", title: "Middernacht: de Mist", tagline: "Er klopt iemand. Met jullie stem.", burn: 2,
+      id: "mist", time: "00:00", title: "Middernacht: de Mist", tagline: "Er klopt iemand. Met jullie stem.", burn: 1,
       steps: [
         scene("spooky", [
           VT("Middernacht. In de gang slaat de klok twaalf keer. Er hangt geen klok in de gang."),
@@ -210,11 +214,16 @@
           lose: "Jullie denken langs elkaar heen. De Mist glipt door het sleutelgat en likt aan mijn vlammen. Brr.",
         }),
         fire(-1, VT("Onder de deur door kruipt een sliert mist naar binnen. Waar hij het vuur raakt, sist het."), { flag: "kleed", ne: "deur" }),
+        scene("warm", [
+          VT("Onder de deur door probeert een sliert mist naar binnen te kruipen. Hij stuit op het oude kleed."),
+          VT("Hij duwt. Het kleed duwt niet terug, het ligt er gewoon. Lelijk, dik en onverzettelijk."),
+          GL("Ha! Ik heb dat kleed altijd gewaardeerd. Altijd. Zeg ik dat niet altijd?"),
+        ], is("kleed", "deur")),
         fire(-1, VT("Het gordijn is dicht, maar de kou van het raam hangt nog in de kamer. Gloei huivert."), is("mist", "gekeken")),
       ],
     },
     {
-      id: "aanbod", time: "02:00", title: "Het aanbod van de Vorst", tagline: "Hij vraagt het heel beleefd.", burn: 2,
+      id: "aanbod", time: "02:00", title: "Het aanbod van de Vorst", tagline: "Hij vraagt het heel beleefd.", burn: 1,
       steps: [
         scene("cold", [
           VT("Twee uur. De mist is weg. Het is stil. Zelfs de kachel tikt niet meer."),
@@ -236,18 +245,22 @@
         ], is("belofte", "nee")),
         choice("aanbod", "Drie blokken Vorsthout voor de deur. Doen jullie open?", [
           opt("Opendoen. Drie blokken is drie blokken.", "Nu warm. De rekening komt later.", { aanbod: "ja" }),
-          opt("Nee, dank u. De deur blijft dicht.", "Gloei wordt er warm van. De Vorst niet.", { aanbod: "nee" }),
+          opt("Nee, dank u. De deur blijft dicht.", "Dan wordt het een duel. Op zijn manier.", { aanbod: "nee" }),
         ]),
         fire(3, VT("De deur zwaait open. Drie berijpte blokken schuiven vanzelf over de drempel. Het vuur laait hoog op."), is("aanbod", "ja")),
-        fire(1, GL("Nee, dank u! Hoor je dat, Vorst? Nee, dank u! Ik gloei ervan, zo trots ben ik."), is("aanbod", "nee")),
         scene("cold", [
           VO("Dank u. Zeer vriendelijk. De rest haal ik later wel op."),
           VT("De deur valt dicht. Het vuur is groot en fel, maar aan de randen zit een blauw randje dat er eerst niet was."),
           GL("Ik zeg niks. Ik ben een vuur. Vuren mokken niet."),
           VT("Gloei mokt."),
         ], is("aanbod", "ja")),
+        scene("tense", [
+          GL("Nee, dank u! Hoor je dat, Vorst? Nee, dank u! Ik gloei ervan, zo trots ben ik."),
+          VO("Jammer. Dan doen we het op de ouderwetse manier."),
+          VT("Hij legt een bevroren blok op de vensterbank. Het kraakt zachtjes. Straks knapt het."),
+        ], is("aanbod", "nee")),
         mini("snel", { base: 2, ifFlag: { aanbod: "ja" }, then: 1 }, {
-          intro: "De Vorst wil duelleren: wie tikt het snelst als het blok knapt? Te vroeg is af. Hij is snel. Jullie hopelijk ook.",
+          intro: "De Vorst houdt van spelletjes. Wie tikt het snelst als het blok knapt? Te vroeg is af. Hij is snel. Jullie hopelijk ook.",
           win: "{MVP} is sneller dan de Vorst! Hij zegt er niks van, maar in het raam springt een barstje.",
           meh: "Gelijk opgaand. De Vorst knikt beleefd. ‘Niet slecht. Voor mensen.’",
           lose: "De Vorst was elke keer sneller. Hij bood er zelfs zijn excuses voor aan. Dat is nog het ergste.",
@@ -255,7 +268,7 @@
       ],
     },
     {
-      id: "wolf", time: "04:00", title: "Het uur van de wolf", tagline: "Verhalen zijn het beste brandhout.", burn: 2,
+      id: "wolf", time: "04:00", title: "Het uur van de wolf", tagline: "Verhalen zijn het beste brandhout.", burn: 1,
       steps: [
         scene("warm", [
           VT("Vier uur. Het uur van de wolf. Het uur waarop zelfs de klok even wil gaan zitten."),
@@ -294,7 +307,7 @@
       ],
     },
     {
-      id: "dageraad", time: "06:00", title: "Dageraad", tagline: "De langste nacht is bijna op.", burn: 2,
+      id: "dageraad", time: "06:00", title: "Dageraad", tagline: "De langste nacht is bijna op.", burn: 1,
       steps: [
         scene("dawn", [
           VT("Zes uur. De langste nacht van het jaar is bijna op. Jullie ook."),
