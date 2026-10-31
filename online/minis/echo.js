@@ -98,6 +98,8 @@
   // Iedereen gelijk: elk paar moet kloppen (bomen~boom en bomen~bom, maar boom≁bom).
   const allSame = (words, pids, fuzzy) => pids.length > 0 && pids.every((p, i) => typeof words[p] === "string" && pids.slice(0, i).every((q) => same(words[q], words[p], fuzzy)));
   const clean = (w) => (typeof w === "string" ? w.replace(/\s+/g, " ").trim() : "");
+  // "Iets…" → "iets…" (alleen als de tweede letter klein is: afkortingen en namen blijven staan)
+  const lcFirst = (s) => (typeof s === "string" && /^[A-Z][a-z]/.test(s) ? s[0].toLowerCase() + s.slice(1) : s || "");
 
   // ---------- Net-contract ----------
   function init({ seed, difficulty, players, rounds } = {}) {
@@ -739,7 +741,9 @@
       const lastR = v && v.rounds[v.rounds.length - 1];
       if (!lastR) {
         qEl.appendChild(h("div", "ec-qk", "Startwoord · denk aan"));
-        qEl.appendChild(h("div", "ec-qw", v ? v.prompt : ""));
+        // Als vervolg op "denk aan" met een kleine letter: "Iets…" leest in Unbounded (en de meeste schreefloze
+        // letters) als "lets…", een kleine i heeft een punt.
+        qEl.appendChild(h("div", "ec-qw", v ? lcFirst(v.prompt) : ""));
         return;
       }
       qEl.appendChild(h("div", "ec-qk", v.final ? "De Mist wacht op jullie oordeel" : "Welk woord verbindt deze?"));

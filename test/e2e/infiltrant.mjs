@@ -579,9 +579,24 @@ export default async function infiltrant(env) {
   // =========================================================
   // e) Eruit zetten, vertrekken, kamer sluiten
   // =========================================================
-  await step("lobby: host zet Mo uit de kamer", async () => {
+  await step("host breekt een lopend potje af via de kamer-sheet ('Potje afbreken') → iedereen terug in de lobby, scores blijven", async () => {
     await host.tap('[data-act="to-lobby"]');
     await all((p) => p.waitPhase("lobby"));
+    const scores = (await S()).scores;
+    await host.tap('[data-act="start"]');
+    await all((p) => p.waitPhase("reveal"));
+    assert(!(await sanne.page.$('[data-act="end"]')), "niet-host heeft geen afbreek-knop");
+    await host.tap(".o-bar-chip");
+    await host.page.waitForSelector('.o-sheet-wrap.open [data-act="end"]', { timeout: 5000 });
+    eq((await host.text('.o-sheet-wrap.open [data-act="end"]')).trim(), "Potje afbreken", "Infiltrant: eigen tekst op de knop");
+    await host.tap('[data-act="end"]');
+    await host.tap('[data-act="confirm"]');
+    await all((p) => p.waitPhase("lobby"));
+    const s = await S();
+    eq([s.phase, s.result, s.scores], ["lobby", null, scores], "afgebroken potje: lobby, geen uitslag, scores onveranderd");
+    for (const p of room()) eq((await p.debug()).priv, null, `${p.name}: geen woord meer na afbreken`);
+  });
+  await step("lobby: host zet Mo uit de kamer", async () => {
     await host.tap(`.o-pgrid [data-pid="${mo.pidv}"]`);
     await host.tap('[data-act="kick"]');
     await mo.waitPhase("ended");

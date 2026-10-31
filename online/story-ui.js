@@ -423,7 +423,9 @@
   // =========================================================
   // Klaar-knop + wie er nog leest + (host) "Iedereen verder" na een poosje.
   function readyBlock(S, c, o) {
-    o = Object.assign({ label: "Klaar ✓", done: "Klaar ✓", action: "ready", hostAction: "next", hostLabel: "Iedereen verder →", verb: "leest", delay: 7000, cls: "" }, o || {});
+    // verb = enkelvoud ("Jacques leest nog…"), verbs = meervoud ("Jacques en Sanne lezen nog…")
+    o = Object.assign({ label: "Klaar ✓", done: "Klaar ✓", action: "ready", hostAction: "next", hostLabel: "Iedereen verder →", verb: "leest", verbs: null, delay: 7000, cls: "" }, o || {});
+    const verbs = o.verbs || { leest: "lezen", wacht: "wachten", kiest: "kiezen", speelt: "spelen" }[o.verb] || o.verb;
     const T = timers();
     const btn = h("button", { class: "sv-btn wide " + o.cls, type: "button", "data-act": o.action, text: o.label, onclick() {
       if (sent || !enabled) return;
@@ -456,7 +458,7 @@
       const all = waiting.length === 0 && c.active.length > 0;
       readers.classList.toggle("ok", all);
       setText(t, !meActive ? "Je kijkt mee 👀" : all ? "Iedereen is klaar ✓" : waiting.length === c.active.length && !mine ? "" :
-        `${listNames(waiting.map((p) => p.name))} ${waiting.length > 1 ? o.verb.replace(/t$/, "en") : o.verb} nog…`);
+        `${listNames(waiting.map((p) => p.name))} ${waiting.length > 1 ? verbs : o.verb} nog…`);
       // Host mag doorduwen als de rest niet komt (iemand weggevallen?)
       const showHost = c.me.isHost && mine && !all && c.active.length > 1;
       if (showHost && !hostT) hostT = T.later(() => hostLine.classList.add("show"), o.delay);
@@ -511,24 +513,28 @@
     const T = timers();
     const run = h("div", { class: "sv-minirun" }); // alleen van de runner: die leegt dit element bij een wissel
     const box = h("div", { class: "sv-minibox" }, run);
-    const skip = c.me.isHost ? h("button", { class: "sv-skip", type: "button", "data-act": "skipMini", text: "⏭ Overslaan", onclick() {
-      if (skip.classList.contains("arm")) { sfx.beep(440, 0.08); c.send("skipMini", {}); skip.classList.remove("arm"); setText(skip, "⏭ Overslaan"); return; }
+    // Overslaan (host): in de intro met tekst; zodra het spel loopt als klein zwevend icoon rechtsonder, zodat het de
+    // aanwijzingen van het slot, het woordveld van echo of de maat-tekst van de blaasbalg niet bedekt.
+    const skipLabel = () => setText(skip, skip.classList.contains("sv-skip-float") ? "⏭" : "⏭ Overslaan");
+    const skip = c.me.isHost ? h("button", { class: "sv-skip", type: "button", "data-act": "skipMini", "aria-label": "Minigame overslaan", text: "⏭ Overslaan", onclick() {
+      if (skip.classList.contains("arm")) { sfx.beep(440, 0.08); c.send("skipMini", {}); skip.classList.remove("arm"); skipLabel(); return; }
       skip.classList.add("arm"); setText(skip, "Zeker? Tik nog eens"); sfx.buzz(8);
-      T.later(() => { skip.classList.remove("arm"); setText(skip, "⏭ Overslaan"); }, 3200);
+      T.later(() => { skip.classList.remove("arm"); skipLabel(); }, 3200);
     } }) : null;
+    const float = () => { if (!skip || skip.classList.contains("sv-skip-float")) return; skip.classList.add("sv-skip-float"); if (!skip.classList.contains("arm")) skipLabel(); box.append(skip); };
     let intro = null;
     if (o.intro) {
       intro = h("div", { class: "sv-intro sv-glass" }, h("div", { class: "sv-introtxt" }, tag(speaker("gloei", c)), h("p", { text: o.intro })), skip);
     }
     const el = h("div", { class: "sv-mini" }, intro, box);
-    if (!intro && skip) { skip.classList.add("sv-skip-float"); box.append(skip); }
+    if (!intro) float();
     const runner = window.DVMini ? window.DVMini.runner(run, { send: (msg) => c.send("mini", msg) }) : null;
     if (!runner) run.append(h("div", { class: "mini-waiting", text: "Minigames zijn niet geladen." }));
     // Intro weg zodra het spel begint (Start getikt of het aftellen verschijnt); daarna krijgt het spel alle ruimte.
     const away = () => {
       if (!intro || intro.classList.contains("away")) return;
       intro.classList.add("away"); T.later(fit, 520);
-      if (skip) { skip.classList.add("sv-skip-float"); box.append(skip); }
+      float();
     };
     const mo = typeof MutationObserver === "function" ? new MutationObserver((muts) => {
       for (const m of muts) for (const n of m.addedNodes) if (n.nodeType === 1 && n.classList && (n.classList.contains("mini-countdown") || n.querySelector && n.querySelector(".mini-countdown"))) { away(); return; }

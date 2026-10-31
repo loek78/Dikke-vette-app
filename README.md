@@ -82,6 +82,8 @@ Punten: winnende burgers +2, winnende infiltranten +4 (de goede rader +1 extra),
 De host kiest in de lobby de spelregels: modus, 1 of 2 infiltranten (2 vanaf 5 spelers), 1–3 hint-rondes per stemming,
 een timer per beurt en de woordcategorieën (waaronder *🔥 Bij het vuur*). Wie later binnenkomt kijkt mee en speelt het
 volgende potje mee. Met *Nog een potje* begint meteen een nieuw spel; *Naar de lobby* gaat terug naar de spelkiezer.
+Een lopend potje afbreken kan ook: tik als host op de kamercode in de balk en kies *Potje afbreken* (actie `end`, net als
+*Terug naar de lobby* in Vuurwacht en de arcade).
 
 ## Hoe werkt het online?
 

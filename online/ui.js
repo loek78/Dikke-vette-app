@@ -769,7 +769,10 @@
         if (v.me.isHost && p.pid !== v.me.pid) row.append(btn("Eruit", "player", "o-btn-mini", () => { close(); playerSheet(v, p); }, { "data-pid": p.pid }));
         list.append(row);
       });
-      const canEnd = v.me.isHost && game !== "infiltrant" && pub.phase !== "lobby";
+      // Host: lopend spel afbreken → lobby (alle drie de engines kennen `end`). Infiltrant: niet op het uitslagscherm,
+      // daar staan al "Nog een potje" en "Naar de lobby".
+      const canEnd = v.me.isHost && pub.phase !== "lobby" && !(game === "infiltrant" && pub.phase === "over");
+      const endText = { story: "Het verhaal stopt hier. Jullie kunnen later opnieuw beginnen; de stand blijft bewaard.", arcade: "De arcade stopt. De punten blijven staan.", infiltrant: "Dit potje stopt zonder uitslag. De scores van eerdere potjes blijven staan." }[game];
       add(panel, [
         h("p", { class: "o-kicker", text: "Kamercode" }),
         codeTiles(pub.code, "sm"),
@@ -778,9 +781,9 @@
         btn([icon("share"), " Deel link"], "share", "o-btn-glass o-btn-wide", () => shareLink(pub.code, v.brokerIndex)),
         h("h4", { class: "o-h4", text: "Spelers" }), list,
         canEnd && h("h4", { class: "o-h4", text: GAME[game].t }),
-        canEnd && btn("Terug naar de lobby", "end", "o-btn-glass o-btn-wide", async () => {
+        canEnd && btn(game === "infiltrant" ? "Potje afbreken" : "Terug naar de lobby", "end", "o-btn-glass o-btn-wide", async () => {
           close();
-          const ok = await ask({ emoji: "🏕️", title: "Terug naar de lobby?", text: game === "story" ? "Het verhaal stopt hier. Jullie kunnen later opnieuw beginnen; de stand blijft bewaard." : "De arcade stopt. De punten blijven staan.", ok: "Naar de lobby" });
+          const ok = await ask({ emoji: "🏕️", title: game === "infiltrant" ? "Potje afbreken?" : "Terug naar de lobby?", text: endText, ok: "Naar de lobby" });
           if (ok) { sfx.tap(); act("end"); }
         }),
       ]);
@@ -1046,9 +1049,10 @@
       else if (v.me.isHost) playerSheet(v, p);
       else restart(b.querySelector(".o-av"), "o-bounce");
     });
-    const players = h("section", { class: "o-glass o-card o-rise", style: { "--i": 2 } },
+    const players = h("section", { class: "o-glass o-card o-rise", style: { "--i": 1 } },
       h("div", { class: "o-card-head" }, h("h3", { class: "o-h3", text: "Spelers" }), count), grid, need);
 
+    // Volgorde: ticket → spelers (is de ander er al?) → spelkiezer → instellingen → Start
     const picker = gamePicker(isHost);
     const conf = game === "infiltrant" ? (isHost ? settingsCard() : summaryCard()) : game === "story" ? storySettingsCard(isHost) : arcadeSettingsCard(isHost);
     const startSub = h("span", { class: "o-btn-sub" });
@@ -1058,7 +1062,7 @@
       sfx.whoosh(); buzz(20); act("start");
     } }, h("span", { class: "o-btn-l" }, icon("play"), h("span", { text: "Start" })), startSub) : null;
     const dock = h("div", { class: "o-dock" }, isHost ? start : waitLine(`Wachten tot de host ${G.t} start…`));
-    const el = h("div", { class: "o-view o-lobby" }, ticket, picker.el, players, conf.el, dock);
+    const el = h("div", { class: "o-view o-lobby" }, ticket, players, picker.el, conf.el, dock);
 
     return {
       el,
@@ -1111,7 +1115,7 @@
         h("span", { class: "o-gm-d", text: g.d }),
         h("span", { class: "o-gm-meta" }, h("span", { class: "o-gm-n", text: `${g.min}–${g.max} spelers · ${g.time}` }), h("span", { class: "o-gm-badge" }))),
       h("span", { class: "o-mode-check" }, icon("check"))));
-    const el = h("section", { class: "o-glass o-card o-rise", style: { "--i": 1 } },
+    const el = h("section", { class: "o-glass o-card o-rise", style: { "--i": 2 } },
       h("div", { class: "o-card-head" }, h("h3", { class: "o-h3", text: "Wat spelen we?" }), h("span", { class: "o-count", text: isHost ? "jij kiest" : "de host kiest" })),
       h("div", { class: "o-gms" }, cards));
     return {
@@ -1944,7 +1948,7 @@
     const hero = h("header", { class: "o-hero" },
       h("div", { class: "o-emblem", "aria-hidden": "true" }, h("i", { class: "o-emblem-ring" }), h("i", { class: "o-emblem-core" }), h("span", { class: "o-emblem-e", text: "🔥" })),
       h("h1", { class: "o-brand o-brand-sm", "data-text": "SAMEN SPELEN" }, h("span", { text: "SAMEN SPELEN" })),
-      h("p", { class: "o-tagline", text: "Eén kamer, drie spellen. Ieder op z'n eigen telefoon." }),
+      h("p", { class: "o-tagline", text: "Eén kamer, drie spellen, ieder op z'n eigen telefoon." }), // kleine i: in Unbounded leest "Ieder" als "leder"
       h("div", { class: "o-teasers", role: "list", "aria-label": "De spellen" }, GAMES.map((g) => h("div", { class: "o-teaser", role: "listitem", "data-game": g.id },
         h("span", { class: "o-teaser-e", "aria-hidden": "true", text: g.e }), h("b", { text: g.t }),
         h("small", { text: g.id === "infiltrant" ? `vanaf ${g.min} spelers` : g.min === 1 ? "alleen of samen" : `voor ${g.min} tot ${g.max}` })))));

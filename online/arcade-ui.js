@@ -46,12 +46,13 @@
       cards.set(def.id, { card, rec });
       grid.append(card);
     });
-    const diffBox = h("div", { class: "ar-diff", role: "group", "aria-label": "Moeilijkheid" }, DIFF.map((d) => h("button", { type: "button", "data-diff": d.n, onclick() {
+    // Alleen de naam (Rustig/Stevig/Heet); de Vuurwacht-namen eronder (chill/normaal/pittig) lazen als twee instellingen.
+    const diffBox = h("div", { class: "ar-diff", role: "group", "aria-label": "Moeilijkheid" }, DIFF.map((d) => h("button", { type: "button", "data-diff": d.n, "aria-label": `${d.name} (niveau ${d.n})`, onclick() {
       if (!c.me.isHost || sent) return;
       diff = d.n; diffTouched = true; P.sfx.beep(520 + d.n * 80, 0.05, "triangle", 0.08);
       c.send("settings", { difficulty: d.n }); // live zichtbaar voor de rest
       paint(c);
-    } }, d.name, h("i", { text: d.sub }))));
+    } }, d.name)));
     const play = h("button", { class: "sv-btn wide", type: "button", "data-act": "pick", text: "Speel", onclick() {
       if (!sel || sent) return;
       sent = true; P.sfx.beep(700, 0.08, "triangle", 0.1); P.sfx.buzz(14);

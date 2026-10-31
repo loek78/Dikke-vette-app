@@ -345,6 +345,34 @@ test("next vanuit over → lobby; result weg, scores blijven", () => {
   assert.equal(E.privateView(r.s, "p1"), null);
 });
 
+test("end: host breekt een lopend potje af → lobby zonder uitslag; niet in de lobby; alleen host", () => {
+  const r = room(5, { seed: 3 });
+  assert.equal(r.act("p0", "end").phase, "lobby"); // in de lobby: alleen ack
+  r.start();
+  const scores = { ...r.s.scores };
+  assert.equal(r.act("p1", "end").phase, "reveal"); // niet de host
+  r.revealAll(); r.hintsAll();
+  assert.equal(r.s.phase, "vote");
+  const leaver = r.burgers().find((p) => p !== "p0"); // een burger weg: potje loopt door (4 spelers over)
+  r.act(leaver, "leave");
+  assert.equal(r.s.phase, "vote");
+  r.act("p0", "end");
+  assert.equal(r.s.phase, "lobby");
+  assert.equal(r.s.result, null);
+  assert.deepEqual(r.s.roles, {});
+  assert.equal(r.s.words, null);
+  delete scores[leaver]; // net als bij `next` vanuit over: de score van een vertrokken speler gaat mee weg
+  assert.deepEqual(r.s.scores, scores);
+  assert.ok(!r.p(leaver), "vertrokken speler opgeruimd");
+  assert.ok(r.s.players.every((p) => p.alive && !p.spectator));
+  assert.equal(E.privateView(r.s, "p1"), null);
+  assert.equal(E.publicView(r.s).phase, "lobby");
+  r.join("p9"); // nieuwe speler zit meteen in de lobby, en een volgend potje start gewoon
+  r.act("p0", "start");
+  assert.equal(r.s.phase, "reveal");
+  assert.ok(r.alive().includes("p9"));
+});
+
 // ---------- Reveal & hints ----------
 test("reveal → hints: alleen levende spelers, dubbel = alleen ack", () => {
   const r = room(4, { seed: 9 });

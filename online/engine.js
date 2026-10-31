@@ -31,6 +31,8 @@
  * Lifecycle details
  *   - lobby leave/kick removes the player (and score) entirely; in game the player stays with left:true, alive:false.
  *   - players with left:true are purged on `start` and on `next` (over → lobby); spectators are promoted on `start`.
+ *   - `end` (host, any phase but lobby) aborts the running game → lobby, like `next` from "over" but without a result
+ *     or score delta (same as the host's "Terug naar de lobby" in Vuurwacht and the arcade).
  *   - a known pid that `join`s again gets its profile updated and `left` cleared (in game it stays alive:false,
  *     but sees its word again); a known pid missing from `players` is re-added (spectator when a game runs).
  *   - leave during a vote: the leaver's vote is dropped, votes ON the leaver are dropped (those voters may vote again),
@@ -456,6 +458,12 @@
       s.guess = { pid, text, correct };
       if (correct) s.pendingWinner = "infiltranten";
       s.phase = "elim";
+      return true;
+    },
+    // Host breekt een lopend potje af → lobby (geen uitslag, geen punten; scores van eerdere potjes blijven).
+    end(s, pid) {
+      if (!isHost(s, pid) || s.phase === "lobby") return false;
+      toLobby(s);
       return true;
     },
     next(s, pid, d, ctx) {

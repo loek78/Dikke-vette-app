@@ -524,6 +524,10 @@
 }
 .o-seg-b { position: relative; z-index: 1; height: 40px; font: 700 13.5px/1 var(--display); color: var(--dim); transition: color 0.25s; }
 .o-seg-b.on { color: var(--on-acc); }
+/* Alleen-lezen (niet-host): wel de stand laten zien, niet als knoppen ogen */
+.o-seg-b:disabled { cursor: default; }
+.o-seg:has(.o-seg-b:disabled) { opacity: 0.78; }
+.o-seg:has(.o-seg-b:disabled) .o-seg-thumb { box-shadow: none; filter: saturate(0.8); }
 .o-cats { display: flex; flex-wrap: wrap; gap: 7px; }
 .o-cat {
   min-height: 40px; padding: 0 13px; border-radius: 999px; font-size: 13.5px; font-weight: 800; color: var(--dim);
@@ -603,8 +607,10 @@
 .o-c3-back .o-c3-foil { opacity: 0.55; }
 .o-c3-back > *:not(.o-c3-foil) { position: relative; z-index: 1; }
 .o-c3-cat { padding: 6px 12px; border-radius: 999px; font-size: 12.5px; font-weight: 800; color: #8a5a36; background: rgba(255, 106, 26, 0.13); box-shadow: inset 0 0 0 1px rgba(255, 106, 26, 0.25); }
+/* Het geheime woord in kapitalen: Unbounded heeft geen schreef-I, dus "Iglo" leest anders als "lglo" en "IJs…" valt
+   uit elkaar; in kapitalen is elk woord ondubbelzinnig (en het past bij het stempel-karakter van de kaart). */
 .o-c3-word {
-  width: 100%; margin: 12px 0 10px; font: 900 44px/1.02 var(--display); letter-spacing: -0.025em; overflow-wrap: normal;
+  width: 100%; margin: 12px 0 10px; font: 900 44px/1.02 var(--display); letter-spacing: 0; text-transform: uppercase; overflow-wrap: normal;
   background: linear-gradient(180deg, #2a1208, #8a5a36 120%); -webkit-background-clip: text; background-clip: text; color: transparent;
 }
 .o-c3-note { margin: 0; max-width: 24ch; font-size: 13px; line-height: 1.35; font-weight: 700; color: #7a5a40; }
@@ -667,7 +673,7 @@
 }
 .o-peek-wrap.open .o-peek-pop { transform: none; opacity: 1; }
 .o-peek-cat { display: block; font-size: 12px; font-weight: 800; color: #a0632a; }
-.o-peek-word { display: block; margin-top: 4px; font: 900 26px/1.05 var(--display); letter-spacing: -0.02em; overflow-wrap: anywhere; }
+.o-peek-word { display: block; margin-top: 4px; font: 900 24px/1.05 var(--display); letter-spacing: 0; text-transform: uppercase; overflow-wrap: anywhere; }
 .o-peek-pop.is-inf { background: linear-gradient(160deg, #3a0a06, #140403); color: #fff6e6; box-shadow: 0 26px 60px -12px rgba(0, 0, 0, 0.75), inset 0 0 0 1.5px #e8401c; }
 .o-peek-pop.is-inf .o-peek-cat { color: #ffc9a8; }
 .o-peek-pop.is-inf .o-peek-word { font-size: 18px; }
@@ -914,7 +920,7 @@
 .o-wcard.is-b { background: linear-gradient(160deg, rgba(255, 194, 71, 0.22), rgba(255, 194, 71, 0.05)); box-shadow: inset 0 0 0 1px rgba(255, 194, 71, 0.38); }
 .o-wcard.is-i { background: linear-gradient(160deg, rgba(232, 64, 28, 0.26), rgba(232, 64, 28, 0.06)); box-shadow: inset 0 0 0 1px rgba(232, 64, 28, 0.42); }
 .o-wcard-k { font: 700 10px/1.2 var(--display); letter-spacing: 0.12em; text-transform: uppercase; color: var(--dim); }
-.o-wcard-w { font: 900 19px/1.1 var(--display); letter-spacing: -0.02em; overflow-wrap: anywhere; hyphens: auto; }
+.o-wcard-w { font: 900 17px/1.15 var(--display); letter-spacing: 0.01em; text-transform: uppercase; overflow-wrap: anywhere; hyphens: auto; }
 .o-words-cat { grid-column: span 2; margin: 0; text-align: center; color: var(--dim); font-size: 13px; font-weight: 700; }
 .o-board { padding-bottom: 8px; }
 .o-row { display: grid; grid-template-columns: 30px 36px minmax(0, 1fr) auto 32px; align-items: center; gap: 10px; padding: 9px 2px; border-top: 1px solid rgba(255, 231, 184, 0.07); animation: o-rise 0.5s cubic-bezier(0.2, 0.9, 0.25, 1.1) backwards; animation-delay: calc(var(--i) * 70ms + 500ms); }
@@ -1023,7 +1029,8 @@
 .o-gm-t { font: 700 15px/1.2 var(--display); letter-spacing: -0.005em; }
 .o-gm-d { font-size: 12.5px; line-height: 1.32; color: var(--dim); }
 .o-gm-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 3px; }
-.o-gm-n { font: 700 10px/1.3 var(--display); letter-spacing: 0.06em; text-transform: uppercase; color: var(--faint); }
+.o-gm-n { font: 700 10px/1.3 var(--display); letter-spacing: 0.06em; text-transform: uppercase; color: var(--dim); }
+.o-gm.on .o-gm-d { color: var(--text); opacity: 0.9; }
 .o-gm-badge { display: inline-flex; align-items: center; height: 20px; padding: 0 8px; border-radius: 999px; font: 700 10px/1 var(--display); letter-spacing: 0.06em; text-transform: uppercase; background: rgba(255, 231, 184, 0.1); color: var(--dim); }
 .o-gm-badge:empty { display: none; }
 .o-gm-badge.is-tip { background: linear-gradient(135deg, rgba(255, 194, 71, 0.95), rgba(255, 231, 184, 0.95)); color: var(--ink); }
