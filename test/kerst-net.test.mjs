@@ -58,6 +58,9 @@ test("newLobby + reduce: join/set/ready/leave/presence, zelfde referentie als er
   assert.equal(st0.phase, "lobby");
   assert.equal(st0.players.h.ready, true, "de host is altijd klaar");
   assert.equal(st0.updatedAt, 1000);
+  assert.equal(st0.durationSec, KN.DURATION_SEC, "standaard een run van 90 s");
+  assert.equal(KN.newLobby({ code: "BAKO", hostPid: "h", host: {}, durationSec: 25 }).durationSec, 25, "testruns (?dur=) mogen korter");
+  assert.equal(KN.newLobby({ code: "BAKO", hostPid: "h", host: {}, durationSec: -3 }).durationSec, KN.DURATION_SEC, "onzin → standaard");
   const st1 = KN.reduce(st0, { t: "join", pid: "r", d: { name: "  Rivka  ", animal: "hert", difficulty: "makkelijk" } }, 2000);
   assert.notEqual(st1, st0);
   assert.equal(st0.players.r, undefined, "input niet gemuteerd");

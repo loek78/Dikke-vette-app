@@ -261,6 +261,30 @@ test("wakker worden zonder tik: na 8 s eindigt de droom", () => {
   assert.equal(log.filter((e) => e.id === "END").length, 1);
 });
 
+test("testhaak game.hurt(reason, force): hartjes af, door het schild heen, 0 → 'Tik om verder te dromen' → einde", () => {
+  const { g, log } = make({ seed: 7 });
+  g.advance(1);
+  assert.equal(g.hurt("test"), 2, "één hartje kwijt");
+  assert.equal(g.hurt("test"), 2, "zonder force telt de onkwetsbaarheid");
+  assert.equal(g.hurt("test", true), 1, "force negeert de onkwetsbaarheid");
+  g.grantPowerup("sneeuwbol");
+  assert.equal(g.state.powerup.id, "sneeuwbol");
+  assert.equal(g.hurt("test", true), 0, "force gaat ook door de sneeuwbol heen");
+  assert.equal(g.state.powerup, null, "schild weg");
+  assert.equal(g.state.phase, "fading");
+  assert.equal(g.state.prompt, "Tik om verder te dromen");
+  g.input("tap"); g.advance(DT);
+  assert.equal(g.state.phase, "run");
+  assert.equal(g.state.hearts, 3);
+  for (let i = 0; i < 3; i++) g.hurt("test", true);
+  assert.equal(g.state.phase, "ending", "tweede keer: de droom vervaagt");
+  g.advance(3);
+  assert.equal(g.state.phase, "end");
+  assert.equal(log.filter((e) => e.id === "END").length, 1, "onEnd precies één keer");
+  assert.equal(log.filter((e) => e.id === "hurt").length, 6, "elke echte klap meldt zich via onEvent");
+  assert.equal(g.state.dpr, 1, "zonder DOM blijft de canvas-schaal 1");
+});
+
 test("autopilot haalt 45 s zonder hartjes te verliezen (normaal, stoer, makkelijk)", () => {
   for (const difficulty of ["normaal", "stoer", "makkelijk"]) {
     for (const seed of [0, 1, 2, 3, "RIVKA"]) {

@@ -156,6 +156,7 @@
     const rockets = [];        // vuurwerkpijlen (scherm)
     const blooms = [];         // vuurwerk-knallen (typed arrays, gebatcht getekend)
     const OV = new Map();      // gecachte full-screen overlays (vignetten, stralen, sneeuwbol-rand) per w×h
+    let auC = null, auG = null; // laag-resolutie canvas voor de noorderlicht-banden (per frame opnieuw gevuld)
     const names = [];          // getoonde namen bij de finale
     let chute = null;          // parachute-cadeau (wereld)
     let sleigh = null;
@@ -458,7 +459,7 @@
           ev.acc -= dt;
           if (ev.acc <= 0) { launch(); ev.acc = rnd(0.3, 0.6) * (reduced ? 1.6 : 1); }
           ev.nameT -= dt;
-          if (ev.nameT <= 0 && ev.names.length) { names.push({ txt: ev.names[ev.ni % ev.names.length], x: w * rnd(0.3, 0.7), y: h * rnd(0.18, 0.42), t: 0, col: FIRE[ev.ni % FIRE.length] }); ev.ni++; ev.nameT = 1.3; }
+          if (ev.nameT <= 0 && ev.names.length) { names.push({ txt: ev.names[ev.ni % ev.names.length], x: w * (0.5 + rnd(-0.05, 0.05)), y: h * (0.47 + (ev.ni % 2) * 0.09), t: 0, col: FIRE[ev.ni % FIRE.length] }); ev.ni++; ev.nameT = 1.3; } /* twee vaste regels onder de banner (top 32 %) en de HUD, boven de grond: hooguit 2 namen tegelijk, nooit over elkaar */
           if (rng() < dt * 10) { const p = spawn(K.CONF, rng() * w, -10, 1); p.vy = rnd(90, 160); p.life = h / 90; p.size = rnd(6, 10); p.w = 0.5; p.vr = rnd(-6, 6); p.col = pick(CANDY); }
           break;
         }
@@ -520,25 +521,32 @@
       const w = V.w, h = V.h, t = tLocal;
       ctx.save();
       ctx.lineJoin = ctx.lineCap = "round";
-      // Noorderlicht: shader-achtige golvende banden (additief)
+      // Noorderlicht: shader-achtige golvende banden. De vier banden worden (onderling additief) op 1/3 resolutie in een
+      // eigen canvas getekend en in één gewone blit over de lucht gelegd: vier full-width 'lighter'-vullingen op een
+      // 2×-DPR canvas kostten in software-rasterisatie net te veel (gemiste frames); zacht/wazig past juist bij een gordijn.
       const au = evs.noorderlicht;
       if (au) {
         const env = ss(0, 1, au.t) * ss(au.dur, au.dur - 1.5, au.t);
-        ctx.globalCompositeOperation = "lighter";
+        const S = 3, cw = M.ceil(w / S), ch = M.ceil(h * 0.47 / S);
+        if (!auC || auC.width !== cw || auC.height !== ch) { auC = makeCanvas(cw, ch); auG = auC ? auC.getContext("2d") : null; au.grads = null; }
+        const g = auG || ctx; // zonder document (Node) rechtstreeks op de hoofdcontext
+        if (auG) { g.setTransform(1, 0, 0, 1, 0, 0); g.globalCompositeOperation = "source-over"; g.globalAlpha = 1; g.clearRect(0, 0, cw, ch); g.setTransform(1 / S, 0, 0, 1 / S, 0, 0); }
+        g.globalCompositeOperation = "lighter";
         if (!au.grads || au.gradH !== h) { // verlopen per band zijn vast voor deze hoogte → één keer maken
           au.gradH = h; au.grads = [];
-          for (let b = 0; b < 4; b++) { const baseY = h * (0.07 + b * 0.075), amp = h * 0.045, th = h * (0.11 - b * 0.012); const g = ctx.createLinearGradient(0, baseY - amp, 0, baseY + th + amp); g.addColorStop(0, "rgba(0,0,0,0)"); g.addColorStop(0.35, AURORA[b]); g.addColorStop(0.7, AURORA[b]); g.addColorStop(1, "rgba(0,0,0,0)"); au.grads.push(g); }
+          for (let b = 0; b < 4; b++) { const baseY = h * (0.07 + b * 0.075), amp = h * 0.045, th = h * (0.11 - b * 0.012); const gr = g.createLinearGradient(0, baseY - amp, 0, baseY + th + amp); gr.addColorStop(0, "rgba(0,0,0,0)"); gr.addColorStop(0.35, AURORA[b]); gr.addColorStop(0.7, AURORA[b]); gr.addColorStop(1, "rgba(0,0,0,0)"); au.grads.push(gr); }
         }
         for (let b = 0; b < 4; b++) {
           const baseY = h * (0.07 + b * 0.075), amp = h * 0.045, th = h * (0.11 - b * 0.012);
-          ctx.fillStyle = au.grads[b]; ctx.globalAlpha = env * (0.22 + 0.08 * sin(t * 0.9 + b));
-          ctx.beginPath();
+          g.fillStyle = au.grads[b]; g.globalAlpha = env * (0.3 + 0.1 * sin(t * 0.9 + b)); // iets meer alpha: geen additieve gloed meer
+          g.beginPath();
           const N = 18, step = w / N;
-          for (let i = 0; i <= N; i++) { const x = i * step; const y = baseY + sin(x * 0.012 + t * 0.9 + b * 1.7) * amp + sin(x * 0.027 - t * 1.4 + b) * amp * 0.5; i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }
-          for (let i = N; i >= 0; i--) { const x = i * step; const y = baseY + th + sin(x * 0.012 + t * 0.9 + b * 1.7 + 0.8) * amp * 0.8 + sin(x * 0.02 + t * 1.1) * amp * 0.4; ctx.lineTo(x, y); }
-          ctx.closePath(); ctx.fill();
+          for (let i = 0; i <= N; i++) { const x = i * step; const y = baseY + sin(x * 0.012 + t * 0.9 + b * 1.7) * amp + sin(x * 0.027 - t * 1.4 + b) * amp * 0.5; i ? g.lineTo(x, y) : g.moveTo(x, y); }
+          for (let i = N; i >= 0; i--) { const x = i * step; const y = baseY + th + sin(x * 0.012 + t * 0.9 + b * 1.7 + 0.8) * amp * 0.8 + sin(x * 0.02 + t * 1.1) * amp * 0.4; g.lineTo(x, y); }
+          g.closePath(); g.fill();
         }
-        ctx.globalCompositeOperation = "source-over"; ctx.globalAlpha = 1;
+        g.globalCompositeOperation = "source-over"; g.globalAlpha = 1;
+        if (auG) ctx.drawImage(auC, 0, 0, cw * S, ch * S); // gewone (source-over) blit: additief over een half scherm is in software-raster 3× zo duur
       }
       // Reuzenboom: gloed + lichtjes die op de maat pulseren
       if (giant) {
@@ -600,8 +608,8 @@
         ctx.save(); ctx.translate(s.x, s.y); ctx.rotate(t * 1.5);
         if (st) ctx.drawImage(st, -r, -r, r * 2, r * 2); else { ctx.fillStyle = "#ffd14f"; ctx.beginPath(); ctx.arc(0, 0, r * 0.7, 0, TAU); ctx.fill(); }
         ctx.restore();
-        // hint voor kinderen: TIK!
-        if (s.t > 0.4) {
+        // hint voor kinderen: TIK! (pas als de ster onder de HUD-balk uit is, anders staat hij achter de hartjes)
+        if (s.t > 0.4 && s.y > 118) {
           const a = M.min(1, (s.t - 0.4) / 0.3), bob = sin(t * 6) * 3;
           ctx.save(); ctx.globalAlpha = a; ctx.translate(s.x, s.y + 62 + bob);
           ctx.fillStyle = "#3a2826"; ctx.beginPath(); ctx.roundRect ? ctx.roundRect(-34, -15, 68, 30, 15) : ctx.rect(-34, -15, 68, 30); ctx.fill();
@@ -686,9 +694,12 @@
     }
     function drawName(ctx, nm) {
       const w = V.w, h = V.h, k = nm.t / 2.4, pop = ss(0, 0.25, k) * (1 + 0.15 * (1 - ss(0, 0.5, k)));
-      const fs = M.round(clamp(M.min(w, h) * 0.13, 26, 64) * pop), a = k < 0.7 ? 1 : 1 - (k - 0.7) / 0.3;
+      const base = clamp(M.min(w, h) * 0.13, 26, 64), FONT = (px) => `900 ${px}px "Unbounded", system-ui, -apple-system, "Segoe UI", sans-serif`;
+      const a = k < 0.7 ? 1 : 1 - (k - 0.7) / 0.3;
       ctx.save(); ctx.globalAlpha = a; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-      ctx.font = `900 ${fs}px "Unbounded", system-ui, -apple-system, "Segoe UI", sans-serif`;
+      if (!nm.fit) { ctx.font = FONT(M.round(base)); const tw = ctx.measureText(nm.txt).width; nm.fit = tw > w - 28 ? (w - 28) / tw : 1; } // lange namen (Sneeuwvlok) passen op het scherm: op de basisgrootte meten, niet tijdens de pop-in
+      const fs = M.max(18, M.round(base * nm.fit * pop));
+      ctx.font = FONT(fs);
       const y = nm.y - k * 30;
       ctx.lineWidth = M.max(6, fs * 0.22); ctx.strokeStyle = "rgba(40,20,60,.85)"; ctx.strokeText(nm.txt, nm.x, y);
       ctx.fillStyle = nm.col; ctx.fillText(nm.txt, nm.x, y);
@@ -704,6 +715,9 @@
       // sterrenstof-spoor
       if (rng() < 0.9) { const p = spawn(K.SPARK, x + 110 * s, y + 6 + rnd(-6, 6), 1); p.vx = 40; p.vy = rnd(10, 40); p.life = rnd(0.5, 1.1); p.size = rnd(4, 9); p.col = pick(["#ffd14f", "#ffe9a8", "#ffffff"]); }
       ctx.save(); ctx.translate(x, y); ctx.scale(s, s);
+      // warme gloed achter het silhouet: ook tegen de donkere nachthemel (niet alleen voor de maan) blijft de slee zichtbaar
+      const halo = SP.ok ? SP.glowOf("#ffd9a0") : null;
+      if (halo) { ctx.globalAlpha = 0.5; ctx.drawImage(halo, -120, -110, 300, 170); ctx.globalAlpha = 1; }
       const sil = "#1a1340";
       ctx.fillStyle = sil; ctx.strokeStyle = sil; ctx.lineWidth = 3; ctx.lineCap = "round";
       // slee
@@ -764,13 +778,15 @@
     function collectables() {
       colOut.length = 0;
       for (const d of drops) if (!d.taken && (d.state === 0 || d.t < 0.9)) colOut.push(d.api || (d.api = { id: d.id, kind: "candy", get x() { return d.x; }, get y() { return d.y; }, r: d.r, take() { takeDrop(d); } }));
-      if (chute && !chute.taken) colOut.push(chute.api || (chute.api = { id: chute.id, kind: "gift", get x() { return chute.x; }, get y() { return chute.y; }, r: chute.r, take() { chute.taken = true; burst("confetti", chute.x, chute.y, 18); chute = null; } }));
+      // het api-object houdt zijn eigen cadeau vast (niet de variabele `chute`): take() zet die op null en de aanroeper leest daarna nog x/y
+      if (chute && !chute.taken) colOut.push(chute.api || (chute.api = ((c) => ({ id: c.id, kind: "gift", get x() { return c.x; }, get y() { return c.y; }, r: c.r, take() { if (c.taken) return; c.taken = true; burst("confetti", c.x, c.y, 18); if (chute === c) chute = null; } }))(chute)));
       return colOut;
     }
-    function destroy() { destroyed = true; count = 0; drops.length = 0; shooters.length = 0; rockets.length = 0; blooms.length = 0; names.length = 0; OV.clear(); for (const k in evs) delete evs[k]; chute = sleigh = giant = singer = null; }
+    function destroy() { destroyed = true; count = 0; drops.length = 0; shooters.length = 0; rockets.length = 0; blooms.length = 0; names.length = 0; OV.clear(); auC = auG = null; for (const k in evs) delete evs[k]; chute = sleigh = giant = singer = null; }
 
     const fx = {
       trigger, update, drawBack, drawFront, burst, hitTest, collectables, destroy,
+      end(id) { if (destroyed || !evs[id]) return; endEvent(id); activeIds.length = 0; for (const k in evs) activeIds.push(k); }, // het spel vervangt een lopend event → FX stopt het oude mee
       active(id) { const ev = evs[id]; return ev ? clamp(ev.k, 0, 1) : 0; },
       get events() { return activeIds; },
       get wishes() { const out = []; for (const s of shooters) if (s.big && !s.caught) out.push({ x: s.x, y: s.y, r: 60 }); return out; }, // tikbare sterren (canvas-px)

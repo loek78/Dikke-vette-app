@@ -21,9 +21,10 @@
  *     game.state                   read-only snapshot: { x, y, speed, stars, hearts, meters, phase, powerup, event, ghosts,
  *                                  obstaclesAhead:[{type,x,w,h,y0,needs,alt,dist,state}], combo, maxCombo, paused, countdown, prompt,
  *                                  t, anim, onGround, flip, theme, candies, bells, gifts, revived, wishWindow, droomster,
- *                                  candyRain, name, animal, difficulty, seed }
+ *                                  candyRain, name, animal, difficulty, seed, dpr (canvas scale in use; adaptive, ≤ 2) }
  *     game.advance(seconds)        test hook: run the fixed-step simulation without rAF/rendering
  *     game.grantPowerup(id)        test/debug hook: as if a gift with that power-up was picked up
+ *     game.hurt(reason, force)     test/debug hook: take a hit (force = ignore invulnerability/shield) → hearts left
  *     game.level, game.fx          the level instance and the KerstFX instance (or null)
  *   opts.drawText (default false): the game itself draws the countdown / "Tik om verder te dromen" / "Pauze" text in the
  *   canvas; ui.js normally renders these from state.countdown / state.prompt / state.paused instead.
@@ -81,6 +82,7 @@
   const MILESTONES = [{ m: 80, id: "noorderlicht" }, { m: 400, id: "reuzenboom" }, { m: 800, id: "droomflip" }];
   const EVENT_GAP = 10;
   const SCORE = { star: 1, candy: 3, gift: 5, bell: 2, bauble: 5, drop: 1, chute: 5, wish: 25, melody: 20, spin: 5 };
+  const HEAL_STARS = 40; // zoveel sterren na een botsing = een hartje terug (kindvriendelijk: fouten zijn te herstellen)
   const ANIMALS = ["hert", "konijn", "vos", "uil"];
   const NAMES = { hert: "Vlok", konijn: "Pluis", vos: "Snuf", uil: "Oeki" };
   // Sprite-ankers zoals KerstArt ze definieert (sizes[name].anchor): base = voeten op (0,0), center = midden, topleft = tegel
@@ -203,6 +205,7 @@
     const drawText = !!opts.drawText;
     const METER = L.METER;
     const level = L.generate(seed, difficulty);
+    level.ensure(4000); // ook tijdens het aftellen (nog geen step) staat er grond en bos in beeld
     const rngEv = L.mulberry32(L.hashSeed(seed) ^ 0x5eed1e);
     const rngGame = L.mulberry32(L.hashSeed(seed) ^ 0x6a3e ^ (difficulty === "stoer" ? 7 : difficulty === "makkelijk" ? 3 : 0));
     const ctx = canvas && typeof canvas.getContext === "function" ? canvas.getContext("2d") : null;
@@ -221,10 +224,15 @@
       candyRain: 0, candyBy: null, rainAcc: 0, shootT: 0, shooters: [], wishWindow: false, drops: [], loose: [], extra: [],
       giant: null, singer: null, sleigh: null, droomster: 0, posTimer: 0, statsTimer: 0, statsKey: "", prompt: null,
       finaleStarted: false, finaleMarks: {}, onPond: false, ownShake: 0, moonTaps: 0, moonWink: 0, zoom: 1, camY: 0, ended: false,
-      inputs: [], sfxAt: {}, pruneAt: 0, assistT: 0, result: null,
+      inputs: [], sfxAt: {}, pruneAt: 0, assistT: 0, result: null, sinceHurt: 0, heals: 0,
     };
     const ghosts = []; // { pid, name, animal, x, y, anim, stars, hearts, rx, ry, vx, at, trail:[] }
     let destroyed = false, raf = 0, lastNow = 0, acc = 0, dpr = 1, W = 0, H = 0, lastRenderNow = 0; // W=0 → eerste render meet het canvas
+    // Adaptieve resolutie: blijft het beeld haperen (> 5 % van de frames trager dan 25 ms in ~2 s, dus p95 boven de
+    // 25 ms), dan een stapje minder DPR (2 → 1,75 → 1,5 → … → 1). Zwakkere telefoons houden zo 60 fps; op een vlotte
+    // telefoon gebeurt er niets (een enkele GC-hapering is < 1 %).
+    let dprCap = 2;
+    const jank = { n: 0, bad: 0 };
     const particles = []; // fallback particles when no FX
 
     // ---------- Helpers ----------
@@ -303,7 +311,20 @@
     }
 
     // ---------- Scoring, items, power-ups ----------
-    function addStars(n, why) { S.stars += n; S.statsKey = ""; return why; }
+    function addStars(n, why) {
+      S.stars += n; S.statsKey = "";
+      // Hartje terug: HEAL_STARS sterren verzamelen na een botsing (met volle hartjes wordt niets opgespaard)
+      if (S.hearts >= 3) S.sinceHurt = 0;
+      else if (n > 0) {
+        S.sinceHurt += n;
+        if (S.sinceHurt >= HEAL_STARS && running()) {
+          S.sinceHurt = 0; S.hearts++; S.heals++;
+          sfx("revive"); vib([10, 30, 10]); burst("heart", P.x, P.y, 8);
+          emit("onEvent", "hartje", { hearts: S.hearts });
+        }
+      }
+      return why;
+    }
     function collect(it) {
       it.taken = true;
       const mult = (S.powerup && S.powerup.id === "dubbelsterren" ? 2 : 1) * (S.onPond ? 3 : 1);
@@ -388,7 +409,7 @@
     function hurt(reason) {
       if (P.invuln > 0 || !running()) return;
       if (S.powerup && S.powerup.id === "sneeuwbol") { endPowerup(); P.invuln = 1.0; sfx("powerup"); burst("shield", P.x, P.y + 50, 14); return; }
-      S.hearts--; P.stumble = PHYS.stumbleDur; P.invuln = PHYS.invuln; P.slide = 0; S.combo = 0; S.bellCombo = 0;
+      S.hearts--; P.stumble = PHYS.stumbleDur; P.invuln = PHYS.invuln; P.slide = 0; S.combo = 0; S.bellCombo = 0; S.sinceHurt = 0;
       if (P.onGround) P.anim = "stumble";
       scatter(); sfx("hurt"); vib(40); burst("hurt", P.x, P.y + 40, 8);
       if (S.hearts <= 0) {
@@ -409,7 +430,7 @@
       return {
         stars: S.stars, meters: Math.round(S.meters), maxCombo: S.maxCombo, powerups: S.powerups.length, powerupList: S.powerups.slice(),
         events: S.events.slice(), candies: S.candies, bells: S.bells, gifts: S.gifts, hearts: S.hearts, revived: S.revived,
-        jumps: S.jumps, maxHeight: Math.round(S.maxHeight), wishes: S.wishes, duration: Math.round(S.t * 10) / 10,
+        jumps: S.jumps, maxHeight: Math.round(S.maxHeight), wishes: S.wishes, duration: Math.round(S.t * 10) / 10, heals: S.heals,
         name, animal, difficulty, seed,
       };
     }
@@ -462,6 +483,7 @@
         case "finale": if (durationSec && S.phase === "finale" && !replaced) endRun(); break;
       }
       S.event = null;
+      if (replaced && fx && typeof fx.end === "function") safe(() => fx.end(ev.id)); // FX stopt mee (anders blijft bv. het peperkoek-palet hangen)
       if (ev.id !== "schaatsbaan") { // de schaatsbaan is terrein: telt niet mee voor de 10 s rust tussen verrassingen
         S.lastEventEnd = S.t;
         S.nextRandomAt = S.t + EVENT_GAP + 2 + rngEv() * 6;
@@ -592,12 +614,39 @@
           if (edge > 0 && edge < S.speed * PHYS.assist) assistTarget = o;
         }
       }
-      // Makkelijk: hulpje als het kind nog niets deed — springen voor stam/dennenappel/gat, bukken voor de sneeuwpop.
-      if (difficulty === "makkelijk" && running() && !S.fly && !S.sled && P.onGround && P.slide <= 0 && S.inputs.length === 0 && S.assistT <= 0) {
-        const gap = level.gapAt(P.x) ? null : nextGap(P.x, S.speed * PHYS.assist);
-        if (assistTarget && assistTarget.needs === "slide") { /* ijspegels: zelf vegen */ }
-        else if (assistTarget && assistTarget.alt === "slide") { trySlide(); S.assistT = 0.3; }
-        else if (assistTarget || gap) { tryJump(); S.assistT = 0.3; }
+      // Makkelijk: hulpje als het kind nog niets deed — springen voor stam/dennenappel/gat, bukken voor sneeuwpop en
+      // ijspegels; en wie te vroeg sprong en óp een stam zou landen, krijgt een dubbele sprong cadeau.
+      if (difficulty === "makkelijk" && running() && !S.fly && !S.sled && S.inputs.length === 0 && S.assistT <= 0) {
+        if (P.onGround) {
+          const gap = level.gapAt(P.x) ? null : nextGap(P.x, S.speed * PHYS.assist);
+          if (assistTarget && (assistTarget.needs === "slide" || assistTarget.alt === "slide")) { if (P.slide <= 0) { trySlide(); S.assistT = 0.3; } }
+          else if (assistTarget || gap) { tryJump(); S.assistT = 0.3; } // ook als het kind net (verkeerd) glijdt: springen kan altijd
+        } else if (!P.onGround && P.y > 0) {
+          // (1) te vroeg gesprongen en zo óp een stam/sneeuwpop of in het beekje landen → dubbele sprong
+          if (P.vy < 0 && P.jumps === 1) {
+            const tl = (P.vy + Math.sqrt(P.vy * P.vy + 2 * PHYS.g * P.y)) / PHYS.g; // seconden tot de landing
+            if (tl < 0.25) {
+              const lx = P.x + S.speed * tl, lb = playerBox(lx, 0, false);
+              const g2 = level.gapAt(lx + 22) || level.gapAt(lx - 22);
+              let bad = !!(g2 && lx - 22 > g2.x0 - 6 && lx + 22 < g2.x1 + 6);
+              for (const o of near) {
+                if (bad) break;
+                if (o.needs !== "jump" || (o.type === "pinecone" && o.state !== "landed")) continue;
+                if (overlaps(lb, obstacleBox(o, 0))) bad = true;
+              }
+              if (bad) { tryJump(); S.assistT = 0.3; }
+            }
+          }
+          // (2) gesprongen in plaats van gebukt: zou je door de ijspegels vliegen → duik (veeg omlaag in de lucht)
+          if (S.assistT <= 0) for (const o of near) {
+            if (o.needs !== "slide") continue;
+            const edge = o.x - o.w / 2 - P.x;
+            if (edge < -o.w || edge > S.speed * 0.3) continue;
+            const ta = Math.max(0, edge) / Math.max(1, S.speed), ya = P.y + P.vy * ta - PHYS.g * ta * ta / 2;
+            if (ya < o.y0 + o.h && ya + PLAYER_BOX.h > o.y0) { trySlide(); S.assistT = 0.3; }
+            break;
+          }
+        }
       }
       if (S.assistT > 0) S.assistT -= h;
       if (running() && !S.fly && !S.sled && P.invuln <= 0) {
@@ -711,7 +760,7 @@
         const cols = safe(() => fx.collectables()) || [];
         for (const it of cols) {
           const dx = it.x - c.x, dy = it.y - c.y;
-          if (dx * dx + dy * dy < (PHYS.pickR + (it.r || 0) * 0.5) ** 2) { safe(() => it.take()); collect({ kind: it.kind === "gift" ? "chute" : "drop", x: it.x, y: it.y, optional: true }); }
+          if (dx * dx + dy * dy < (PHYS.pickR + (it.r || 0) * 0.5) ** 2) { const ix = it.x, iy = it.y; safe(() => it.take()); collect({ kind: it.kind === "gift" ? "chute" : "drop", x: ix, y: iy, optional: true }); } // positie vóór take() lezen
         }
       }
       const behind = P.x - 600;
@@ -752,7 +801,8 @@
       st.anim = P.anim; st.onGround = P.onGround; st.flip = S.flipT; st.theme = theme(); st.wishWindow = S.wishWindow;
       st.candyRain = S.candyRain > 0; st.ghosts = ghostList(); st.obstaclesAhead = obstaclesAhead();
       st.name = name; st.animal = animal; st.difficulty = difficulty; st.seed = seed; st.hat = hat; st.invuln = P.invuln > 0;
-      st.flying = !!S.fly; st.sled = S.sled; st.onPond = S.onPond; st.bellCombo = S.bellCombo; st.result = S.result;
+      st.flying = !!S.fly; st.sled = S.sled; st.onPond = S.onPond; st.bellCombo = S.bellCombo; st.result = S.result; st.dpr = dpr;
+      st.healStars = S.sinceHurt; st.heals = S.heals;
       return st;
     }
 
@@ -826,6 +876,10 @@
       }
       let alpha = 1;
       if (active() && !S.paused && !S.resumeAt && S.phase !== "countdown") {
+        if (S.t > 2 && dprCap > 1 && dpr > 1) { // hapert het? (niet in de eerste 2 s: caches worden dan nog gevuld)
+          jank.n++; if (d > 0.025) jank.bad++;
+          if (jank.n >= 120) { if (jank.bad > jank.n * 0.05) { dprCap = Math.max(1, dprCap - 0.25); W = 0; } jank.n = jank.bad = 0; }
+        }
         acc += d;
         let n = 0;
         while (acc >= DT && n++ < 60) { step(DT); acc -= DT; }
@@ -862,7 +916,7 @@
     let camX = 0, Z = 1, gy = 0, psx = 0, px = 0;
     function resize() {
       const cw = canvas.clientWidth || canvas.width || 390, ch = canvas.clientHeight || canvas.height || 844;
-      dpr = Math.min(2, (G.devicePixelRatio > 0 && G.devicePixelRatio) || 1);
+      dpr = Math.min(dprCap, (G.devicePixelRatio > 0 && G.devicePixelRatio) || 1);
       const bw = Math.round(cw * dpr), bh = Math.round(ch * dpr);
       if (canvas.width !== bw || canvas.height !== bh) { canvas.width = bw; canvas.height = bh; }
       W = cw; H = ch;
@@ -872,13 +926,28 @@
     const sy = (wy) => gy - (wy - S.camY) * Z;
     const PAR = [0, 0.12, 0.3, 0.55, 0.85];
     const artHas = {};
+    // Statische sprites (bomen, huisjes, stammen, wegwijzers…) komen uit de pre-render-cache van KerstArt (één drawImage
+    // i.p.v. tientallen vector-paden per boom per frame); de lichtjes in de bomen worden er live overheen getekend.
+    const STATIC = { tree1: 1, tree2: 1, tree3: 1, house: 1, log: 1, signpost: 1, snowdrift: 1, candyCane: 1, pinecone: 1 };
+    const blitOpts = { theme: "nacht", variant: 0 };
     function drawSprite(name, x, y, t, o) {
       // x, y = world position of the sprite's ANCHOR (base for ground things, center for floating things)
       ctx.save(); ctx.translate(sx(x), sy(y));
       if (o && o.flip) ctx.scale(-1, 1);
       const so = { scale: Z * ((o && o.scale) || 1), alpha: o && o.alpha, wink: o && o.wink, color: o && o.color, variant: (o && o.variant) | 0, theme: theme() };
       let ok = false;
-      if (A && typeof A.sprite === "function" && artHas[name] !== false) {
+      if (A && STATIC[name] && typeof A.blit === "function" && artHas["blit:" + name] !== false) {
+        const s = Math.max(0.2, Math.round(so.scale * 20) / 20); // gekwantiseerd: weinig cache-varianten
+        try {
+          if (so.alpha != null) ctx.globalAlpha *= so.alpha;
+          blitOpts.theme = so.theme; blitOpts.variant = so.variant;
+          A.blit(ctx, name, 0, 0, s, blitOpts);
+          const L = A.TREE_LIGHTS && A.TREE_LIGHTS[name];
+          if (L && typeof A.treeLights === "function") { ctx.scale(s, s); A.treeLights(ctx, L[0], L[1], L[2], t + x * 0.013, 3); }
+          ok = true;
+        } catch (e) { artHas["blit:" + name] = false; }
+      }
+      if (!ok && A && typeof A.sprite === "function" && artHas[name] !== false) {
         try { A.sprite(ctx, name, t, so); ok = true; } catch (e) { artHas[name] = false; }
       }
       if (!ok) FB.sprite(ctx, name, t, so);
@@ -926,12 +995,18 @@
       const x0 = camX - 100, x1 = camX + W / Z + 100;
       const tileName = th === "peperkoek" ? "gingerGroundTile" : "groundTile";
       const useTiles = !!(A && A.sizes && A.sizes[tileName]);
+      if (x0 < 0) { // vóór het begin van het bos (aftellen, start): gewoon sneeuw, anders kijk je onder de heuvels
+        const a = sx(x0), b = sx(Math.min(0, x1));
+        ctx.fillStyle = th === "peperkoek" ? "#9a5a2e" : "#c9ddf5"; ctx.fillRect(a, gy, b - a, H - gy);
+        ctx.fillStyle = th === "peperkoek" ? "#f7e6d2" : "#f6fbff"; ctx.fillRect(a, gy - 6 * Z, b - a, 20 * Z);
+      }
       for (const g of level.grounds) {
         if (g.x1 < x0 || g.x0 > x1) continue;
         const a = sx(Math.max(g.x0, x0)), b = sx(Math.min(g.x1, x1));
         if (g.kind === "gap") {
-          ctx.fillStyle = th === "peperkoek" ? "#3b1f12" : "#0e1a3c"; ctx.fillRect(a, gy + 18 * Z, b - a, H);
-          ctx.fillStyle = th === "peperkoek" ? "#7cc4e8" : "#3f7fd8"; ctx.fillRect(a, gy + 18 * Z, b - a, 10 * Z);
+          // bevroren beekje: diepblauw water met een lichte ijsrand (geen zwarte afgrond — dit is een droom, niets engs)
+          ctx.fillStyle = th === "peperkoek" ? "#6b3a22" : "#1f3f8c"; ctx.fillRect(a, gy + 18 * Z, b - a, H);
+          ctx.fillStyle = th === "peperkoek" ? "#8fd3ef" : "#7cc4ff"; ctx.fillRect(a, gy + 18 * Z, b - a, 10 * Z);
           ctx.fillStyle = "rgba(255,255,255,.5)"; for (let x = a + 10; x < b - 10; x += 26) ctx.fillRect(x + Math.sin(t * 4 + x) * 4, gy + 20 * Z, 10, 3);
           continue;
         }
@@ -1101,12 +1176,19 @@
       get fx() { return fx; },
       get opts() { return { seed, difficulty, animal, name, hat, fawnName, durationSec }; },
       grantPowerup(id) { grantPowerup(id, false); }, // test/debug hook: alsof je het cadeau zelf pakte
+      // test/debug hook: een botsing forceren (force = ook tijdens onkwetsbaarheid/schild) → hartje kwijt, bij 0 de
+      // "Tik om verder te dromen"-flow. Geeft het aantal hartjes terug.
+      hurt(reason, force) {
+        if (force) { P.invuln = 0; if (S.powerup && S.powerup.id === "sneeuwbol") endPowerup(); }
+        hurt(reason || "test");
+        return S.hearts;
+      },
     };
     return game;
   }
 
   return {
     create, overlaps, playerBox, obstacleBox, playerCenter, FB,
-    PHYS, PLAYER_BOX, SLIDE_BOX, POWERUPS, EVENTS, EVENT_POOL, MILESTONES, EVENT_GAP, SCORE, ANIMALS, NAMES, DT, VERSION: 1,
+    PHYS, PLAYER_BOX, SLIDE_BOX, POWERUPS, EVENTS, EVENT_POOL, MILESTONES, EVENT_GAP, SCORE, HEAL_STARS, ANIMALS, NAMES, DT, VERSION: 1,
   };
 });

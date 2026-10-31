@@ -14,7 +14,8 @@
  *
  * Pure API
  *   KerstNet.topics(code)                      → { prefix, state, host, pos(pid), posAll, evt, done(pid), doneAll }
- *   KerstNet.newLobby({ code, hostPid, host:{name,animal,difficulty}, seed, now })  → state
+ *   KerstNet.newLobby({ code, hostPid, host:{name,animal,difficulty}, seed, now, durationSec? })  → state
+ *                                              (durationSec: run length in s, default DURATION_SEC = 90; tests use ?dur=)
  *   KerstNet.reduce(state, env, now)           → new state, or the SAME reference when the envelope changes nothing
  *   KerstNet.startRun(state, { now, seed })    → run state (phase "run", startAt = now + START_DELAY_MS, round + 1)
  *   KerstNet.finishRun(state, results, droomster, now) → results state with ranking/total
@@ -32,7 +33,7 @@
  *
  * Session API (browser; Node with { mqtt })
  *   const s = await KerstNet.createSession({ role: "host"|"join", code?, pid?, profile, preferIndex?, mqtt?, brokers?,
- *                                            onStatus?, joinTimeoutMs? })
+ *                                            onStatus?, joinTimeoutMs?, durationSec? (host, new room only) })
  *   s.code, s.pid, s.isHost, s.brokerIndex, s.brokerUrl, s.room (the DVNet room), s.state, s.players, s.me
  *   s.on(type, cb) → off     type ∈ state | pos(pid, pos) | evt(evt) | done(pid, result) | presence(pid, online) |
  *                            status(s) | droomster(frac) | left()
@@ -63,8 +64,9 @@
   const ASLEEP_MS = 5000;        // no pos for 5 s → "ingedut 😴"
   const POS_INTERVAL_MS = 200;
   const PING_MS = 2000;
-  const STARS_PER_PLAYER = 50;   // Droomster target per player (a 90 s run yields ~60–100 ⭐)
-  const RESULTS_WAIT_MS = 12000; // host waits this long for late results after the first one
+  const STARS_PER_PLAYER = 100;  // Droomster target per player (a good 90 s run yields ~100–200 ⭐; the 90 s timer is the fallback)
+  const RESULTS_WAIT_MS = 12000; // host waits at most this long for late results after the run has ended
+  const RESULTS_GRACE_MS = 3000; // … and always until the run's end (+ this grace) when someone finished early
   const noop = () => {};
 
   function dvnet(lib) {
@@ -93,11 +95,14 @@
   }
   function cleanProfile(p) {
     p = p || {};
-    return {
+    const out = {
       name: cleanName(p.name) || "Speler",
       animal: ANIMALS.indexOf(p.animal) >= 0 ? p.animal : "hert",
       difficulty: DIFFS.indexOf(p.difficulty) >= 0 ? p.difficulty : "normaal",
     };
+    const fn = typeof p.fawnName === "string" ? cleanName(p.fawnName).slice(0, 12) : "";
+    if (fn) out.fawnName = fn; // optional: the name this player gave the fawn (shown to the others)
+    return out;
   }
   function newLobby(o) {
     o = o || {};
@@ -107,11 +112,19 @@
     players[o.hostPid] = host;
     return {
       v: VERSION, game: "kerstdroom", code: cleanCode(o.code), hostPid: o.hostPid, phase: "lobby", round: 0,
-      seed: o.seed != null ? o.seed : 1, durationSec: DURATION_SEC, startAt: null, players,
+      seed: o.seed != null ? o.seed : 1, durationSec: o.durationSec > 0 ? Math.round(+o.durationSec) : DURATION_SEC, startAt: null, players,
       results: null, ranking: null, total: null, droomster: null, updatedAt: now,
     };
   }
   function copyPlayers(state) { const out = {}; for (const k in state.players) out[k] = Object.assign({}, state.players[k]); return out; }
+  // How long the host waits for missing results once the first one is in: at least until the run has ended for everyone
+  // (startAt + durationSec + a little grace), and after that at most RESULTS_WAIT_MS for stragglers. Pure.
+  function resultsWaitMs(state, nowMs) {
+    const t = typeof nowMs === "number" ? nowMs : Date.now();
+    if (!state || typeof state.startAt !== "number") return RESULTS_WAIT_MS;
+    const dur = state.durationSec > 0 ? state.durationSec : DURATION_SEC;
+    return Math.max(RESULTS_WAIT_MS, state.startAt + dur * 1000 + RESULTS_GRACE_MS - t);
+  }
   function playerList(state) {
     if (!state || !isObj(state.players)) return [];
     return Object.keys(state.players).map((pid) => Object.assign({ pid }, state.players[pid]))
@@ -137,6 +150,7 @@
           if (d.name != null && next.name !== p.name) { p.name = next.name; changed = true; }
           if (d.animal != null && next.animal !== p.animal) { p.animal = next.animal; changed = true; }
           if (d.difficulty != null && next.difficulty !== p.difficulty) { p.difficulty = next.difficulty; changed = true; }
+          if (d.fawnName != null && next.fawnName !== p.fawnName) { p.fawnName = next.fawnName; changed = true; }
           if (!p.online) { p.online = true; changed = true; }
         }
         break;
@@ -148,6 +162,7 @@
         if (d.name != null && next.name !== p.name) { p.name = next.name; changed = true; }
         if (d.animal != null && next.animal !== p.animal) { p.animal = next.animal; changed = true; }
         if (d.difficulty != null && next.difficulty !== p.difficulty) { p.difficulty = next.difficulty; changed = true; }
+        if (d.fawnName != null && next.fawnName !== p.fawnName) { p.fawnName = next.fawnName; changed = true; }
         if (typeof d.ready === "boolean" && pid !== state.hostPid && state.phase === "lobby" && d.ready !== !!p.ready) { p.ready = d.ready; changed = true; }
         break;
       }
@@ -440,7 +455,8 @@
       if (!have.length) return;
       const pending = activePids().filter((p) => !results[p]);
       if (pending.length && !force && state.phase === "run") {
-        if (!resultsTimer) resultsTimer = later(() => { resultsTimer = null; maybeFinish(true); }, RESULTS_WAIT_MS);
+        // Wie vroeg wakker wordt wacht tot de run voorbij is (de rest droomt gewoon door); daarna nog even op laatkomers.
+        if (!resultsTimer) resultsTimer = later(() => { resultsTimer = null; maybeFinish(true); }, resultsWaitMs(state, now()));
         return;
       }
       if (resultsTimer) { clearTimeout(resultsTimer); timers.delete(resultsTimer); resultsTimer = null; }
@@ -584,7 +600,7 @@
 
     // ---- bootstrap ----
     if (isHost) {
-      if (!state || state.hostPid !== pid) state = newLobby({ code, hostPid: pid, host: profile, seed: newSeed(), now: now() });
+      if (!state || state.hostPid !== pid) state = newLobby({ code, hostPid: pid, host: profile, seed: newSeed(), now: now(), durationSec: o.durationSec });
       else { // herstart van de host: profiel bijwerken en weer online
         state = reduce(state, { t: "join", pid, d: profile, at: now() }, now()) || state;
       }
@@ -629,8 +645,8 @@
   }
 
   return {
-    VERSION, FAMILY, ANIMALS, DIFFS, MAX_PLAYERS, DURATION_SEC, START_DELAY_MS, ASLEEP_MS, POS_INTERVAL_MS, PING_MS, STARS_PER_PLAYER, RESULTS_WAIT_MS, TITLES,
-    topics, cleanName, cleanProfile, newLobby, reduce, canStart, startRun, finishRun, againState, playerList,
+    VERSION, FAMILY, ANIMALS, DIFFS, MAX_PLAYERS, DURATION_SEC, START_DELAY_MS, ASLEEP_MS, POS_INTERVAL_MS, PING_MS, STARS_PER_PLAYER, RESULTS_WAIT_MS, RESULTS_GRACE_MS, TITLES,
+    topics, cleanName, cleanProfile, newLobby, reduce, canStart, startRun, finishRun, againState, playerList, resultsWaitMs,
     estimateOffset, OffsetEstimator, droomsterTarget, aggregateDroomster, assignMedals, familyTotal,
     encodePos, decodePos, shareUrl, newSeed, createSession,
   };

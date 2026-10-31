@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <meta name="theme-color" content="#0b1340">
+  <meta name="description" content="Kerstdroom — ren met Vlok het reekalfje door het droombos. Een kerstspel voor het hele gezin, ieder op zijn eigen telefoon.">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Kerstdroom">
+  <meta name="application-name" content="Kerstdroom">
+  <title>Kerstdroom — ren met Vlok door het droombos</title>
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icon-180.png">
+  <link rel="preload" href="../fonts/unbounded-latin-900-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="../fonts/unbounded-latin-700-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="kerst.css">
+</head>
+<body class="kd" data-screen="title">
+  <canvas id="bg" aria-hidden="true"></canvas>
+  <div class="kd-veil" aria-hidden="true"></div>
+
+  <!-- TITEL -->
+  <section class="kd-scr kd-title is-on" data-scr="title">
+    <div class="kd-topbar">
+      <a class="kd-home" href="../" aria-label="Terug naar de Dikke Vette App">‹ App</a>
+      <button class="kd-icon-btn" id="btnMute" aria-label="Geluid aan of uit">🔊</button>
+    </div>
+    <button class="kd-moon" id="moonBtn" aria-label="De maan"></button>
+    <div class="kd-grow"></div>
+    <header class="kd-hero">
+      <h1 class="kd-wordmark" aria-label="Kerstdroom"><span>KERST</span><span>DROOM</span></h1>
+      <p class="kd-sub">Ren met <b data-fawn-name>Vlok</b><button class="kd-pencil" id="fawnEdit" aria-label="Geef het reekalfje een andere naam">✏️</button> door het droombos</p>
+    </header>
+    <canvas class="kd-hero-vlok" id="heroVlok" aria-hidden="true"></canvas>
+    <p class="kd-join-hint" id="joinHint" hidden></p>
+    <div class="kd-actions">
+      <button class="kd-btn kd-btn-xl" id="btnPlay">▶ SPELEN</button>
+      <button class="kd-btn kd-btn-lg kd-btn-blue" id="btnTogether">👨‍👩‍👧‍👧 Samen spelen</button>
+      <button class="kd-btn kd-btn-ghost" id="btnHelp">❓ Hoe speel je?</button>
+    </div>
+    <p class="kd-foot">Voor Rivka &amp; Zara · met liefde gemaakt 🎄</p>
+  </section>
+
+  <!-- SOLO: kies je vriendje -->
+  <section class="kd-scr" data-scr="setup">
+    <button class="kd-back" data-back aria-label="Terug">‹</button>
+    <h1 class="kd-h1">Kies je vriendje</h1>
+    <p class="kd-lead">Met wie ren je door het droombos?</p>
+    <div class="kd-card">
+      <div class="kd-animals" data-animals="solo"></div>
+    </div>
+    <div class="kd-card">
+      <h2>Hoe moeilijk?</h2>
+      <div class="kd-seg" data-diff="solo"></div>
+    </div>
+    <div class="kd-grow"></div>
+    <div class="kd-stack kd-cta">
+      <button class="kd-btn kd-btn-xl kd-btn-green" id="btnSoloStart">Start! 🚀</button>
+    </div>
+  </section>
+
+  <!-- SAMEN: wie ben jij? kamer maken / meedoen -->
+  <section class="kd-scr" data-scr="together">
+    <button class="kd-back" data-back aria-label="Terug">‹</button>
+    <h1 class="kd-h1">Samen spelen</h1>
+    <div class="kd-card kd-card-tight">
+      <h2>Wie ben jij? <small>Ieder op z'n eigen telefoon 📱</small></h2>
+      <div class="kd-chips kd-chips-sm" data-names="together"></div>
+      <div class="kd-field kd-name-field" style="margin-top:10px" hidden>
+        <input class="kd-input" data-name-input maxlength="14" placeholder="Jouw naam" autocomplete="off" autocapitalize="words">
+      </div>
+    </div>
+    <div class="kd-card kd-card-tight">
+      <h2>Jouw vriendje</h2>
+      <div class="kd-animals kd-compact" data-animals="together"></div>
+      <h2 class="kd-h2-gap">Hoe moeilijk?</h2>
+      <div class="kd-seg kd-compact" data-diff="together"></div>
+    </div>
+    <div class="kd-grow"></div>
+    <div class="kd-row kd-cta">
+      <button class="kd-btn kd-btn-lg" id="btnHost">🏠 Kamer maken</button>
+      <button class="kd-btn kd-btn-lg kd-btn-blue" id="btnJoin">🔑 Meedoen</button>
+    </div>
+  </section>
+
+  <!-- LOBBY -->
+  <section class="kd-scr" data-scr="lobby">
+    <div class="kd-lobby-top">
+      <button class="kd-back" data-leave aria-label="Kamer verlaten">‹</button>
+      <div></div>
+      <div class="kd-status" id="netStatus" data-s="connecting">verbinden…</div>
+    </div>
+    <div class="kd-card kd-code-card">
+      <div>
+        <p class="kd-code-k">Kamercode</p>
+        <p class="kd-code" id="lobbyCode">····</p>
+        <p class="kd-code-sub">Typ de code op de andere telefoons, of scan de QR</p>
+      </div>
+      <div class="kd-qr" id="lobbyQr" aria-label="QR-code om mee te doen" role="img"></div>
+    </div>
+    <button class="kd-btn kd-btn-ghost kd-share" id="btnShare">📤 Stuur de link</button>
+    <div class="kd-players" id="players"></div>
+    <div class="kd-grow"></div>
+    <div class="kd-lobby-cta">
+      <button class="kd-btn kd-btn-lg kd-ready" id="btnReady">Ik ben klaar! ✅</button>
+      <button class="kd-btn kd-btn-lg kd-btn-green" id="btnStart" hidden>Start! 🚀</button>
+      <p class="kd-note" id="lobbyNote"></p>
+    </div>
+  </section>
+
+  <!-- SPEL -->
+  <section class="kd-scr kd-game" data-scr="game">
+    <canvas id="game"></canvas>
+    <div class="kd-hud" id="hud">
+      <div class="kd-hud-top">
+        <div class="kd-pill kd-stars" id="hudStars">⭐ <span>0</span></div>
+        <div class="kd-hearts" id="hudHearts" aria-label="Hartjes"></div>
+        <button class="kd-pause" id="btnPause" aria-label="Pauze">⏸</button>
+      </div>
+      <div class="kd-meters"><span id="hudMeters">0 m</span> <span class="kd-combo" id="hudCombo"></span></div>
+      <div class="kd-droom" id="hudDroom">
+        <div class="kd-droom-bar"><div class="kd-droom-fill" id="hudDroomFill"></div></div>
+        <div class="kd-droom-star" aria-hidden="true">🌟</div>
+        <div class="kd-droom-label"><span>Droomster</span><span id="hudDroomPct">0%</span></div>
+        <div class="kd-ghosts" id="hudGhosts"></div>
+      </div>
+      <div class="kd-banner" id="banner"><b></b><span></span></div>
+      <div class="kd-count" id="countdown"><b>3</b><span>Klaar?</span></div>
+      <div class="kd-prompt" id="prompt"><small>Je wordt bijna wakker…</small><b>Tik om verder te dromen</b><div class="kd-finger">👆</div></div>
+      <div class="kd-pw" id="hudPw"><span class="kd-pw-icon"></span><span class="kd-pw-label"></span><span class="kd-pw-bar"><i></i></span></div>
+    </div>
+  </section>
+
+  <!-- RESULTATEN -->
+  <section class="kd-scr kd-results" data-scr="results">
+    <canvas id="confetti" aria-hidden="true"></canvas>
+    <div class="kd-res-head">
+      <h1 id="resTitle">Goedemorgen! ☀️</h1>
+      <p id="resLead"></p>
+    </div>
+    <div id="resBody"></div>
+    <div class="kd-grow"></div>
+    <div class="kd-stack kd-cta">
+      <button class="kd-btn kd-btn-lg" id="btnAgain">Nog een keer! 🔁</button>
+      <button class="kd-btn kd-btn-ghost" id="btnResHome">‹ Terug naar het begin</button>
+    </div>
+  </section>
+
+  <!-- PAUZE -->
+  <div class="kd-overlay" id="pauseOverlay">
+    <div class="kd-dialog">
+      <h2>Pauze ⏸</h2>
+      <p>Even uitblazen. <span data-fawn-name>Vlok</span> wacht op je.</p>
+      <div class="kd-stack">
+        <button class="kd-btn kd-btn-xl kd-btn-green" id="btnResume">Verder! ▶</button>
+        <button class="kd-btn kd-btn-ghost" id="btnQuit">Stoppen</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- HOE SPEEL JE -->
+  <div class="kd-overlay" id="helpOverlay">
+    <div class="kd-dialog">
+      <h2>Hoe speel je?</h2>
+      <p>Je rent vanzelf. Jij doet dit:</p>
+      <div class="kd-steps">
+        <div class="kd-step"><canvas data-help="jump" width="224" height="180"></canvas><div><b>1. Tik = springen 👆</b><span>Nog een keer tikken in de lucht = dubbele sprong!</span></div></div>
+        <div class="kd-step"><canvas data-help="slide" width="224" height="180"></canvas><div><b>2. Veeg omlaag = glijden 👇</b><span>Zo glij je onder ijspegels en takken door.</span></div></div>
+        <div class="kd-step"><canvas data-help="stars" width="224" height="180"></canvas><div><b>3. Pak sterren ⭐</b><span>En snoep 🍬, belletjes 🔔 en cadeautjes 🎁 vol verrassingen!</span></div></div>
+      </div>
+      <div class="kd-stack">
+        <button class="kd-btn kd-btn-xl" id="btnHelpOk">Begrepen! 👍</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- NAAM VAN HET REEKALFJE -->
+  <div class="kd-overlay" id="nameOverlay">
+    <div class="kd-dialog">
+      <h2>Hoe heet je reekalfje?</h2>
+      <p>Verzin een lieve naam 🦌</p>
+      <input class="kd-input" id="fawnInput" maxlength="12" placeholder="Vlok" autocomplete="off" autocapitalize="words">
+      <div class="kd-stack">
+        <button class="kd-btn kd-btn-xl kd-btn-green" id="btnFawnOk">Dat is 'm! 💛</button>
+        <button class="kd-btn kd-btn-ghost" id="btnFawnCancel">Toch niet</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- EIGEN PROFIEL AANPASSEN (in de lobby) -->
+  <div class="kd-overlay" id="profileOverlay">
+    <div class="kd-dialog">
+      <h2>Dat ben jij ✏️</h2>
+      <div class="kd-card">
+        <h2>Naam</h2>
+        <div class="kd-chips" data-names="lobby"></div>
+        <div class="kd-field kd-name-field" style="margin-top:10px" hidden>
+          <input class="kd-input" data-name-input maxlength="14" placeholder="Jouw naam" autocomplete="off" autocapitalize="words">
+        </div>
+      </div>
+      <div class="kd-card">
+        <h2>Vriendje</h2>
+        <div class="kd-animals" data-animals="lobby"></div>
+      </div>
+      <div class="kd-card">
+        <h2>Hoe moeilijk?</h2>
+        <div class="kd-seg" data-diff="lobby"></div>
+      </div>
+      <div class="kd-stack">
+        <button class="kd-btn kd-btn-xl kd-btn-green" data-profile-ok>Klaar 👍</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- CODE INVOEREN -->
+  <div class="kd-overlay" id="joinOverlay">
+    <div class="kd-dialog">
+      <h2>Welke code?</h2>
+      <p>De 4 letters staan op de telefoon van de baas van de kamer.</p>
+      <input class="kd-input kd-code-input" id="codeInput" maxlength="4" placeholder="ABCD" autocomplete="off" autocapitalize="characters" spellcheck="false" inputmode="text">
+      <div class="kd-stack">
+        <button class="kd-btn kd-btn-xl kd-btn-blue" id="btnJoinGo">Doe mee! 🎉</button>
+        <button class="kd-btn kd-btn-ghost" id="btnJoinCancel">Toch niet</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="kd-busy" id="busy"><span class="kd-spin">❄️</span><span id="busyText">Even wachten…</span><small id="busySub"></small><button class="kd-btn kd-btn-ghost" id="busyCancel" hidden>Toch niet</button></div>
+  <div class="kd-toast" id="toast" role="status" aria-live="polite"></div>
+  <div class="kd-portrait" aria-hidden="true"><span>📱</span>Draai je telefoon rechtop<br>om te spelen</div>
+
+  <script src="../vendor/mqtt.min.js"></script>
+  <script src="../vendor/qrcode.js"></script>
+  <script src="../online/net.js"></script>
+  <script src="level.js"></script>
+  <script src="art.js"></script>
+  <script src="effects.js"></script>
+  <script src="audio.js"></script>
+  <script src="game.js"></script>
+  <script src="net.js"></script>
+  <script src="ui.js"></script>
+</body>
+</html>
