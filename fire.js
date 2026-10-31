@@ -2,10 +2,10 @@
  *
  *   const f = DVFire.flame(canvas, { intensity: .7, embers: true, blueTips: true, logs: true });
  *     intensity  0..1 — 0 = smouldering embers only, 1 = roaring (changes always animate smoothly)
- *     embers     sparks rising from the fire (default true)   blueTips  blue flames on the coals (default true)
- *     logs       two charred logs on the ember bed (default true)
+ *     embers     sparks rising from the fire (default true)   blueTips  blue wood-gas flames on logs + coals (default true)
+ *     logs       two charred logs (glowing alligator char) on the ember bed (default true)
  *   f.setIntensity(x)  smooth transition (fire meter: blokken / 10)     f.intensity  current target
- *   f.burst()          one-off flare-up + spark shower (success!)         f.destroy()
+ *   f.burst()          whoosh (~0.1 s attack, settles in ~2 s) + spark fountain (success!)   f.destroy()
  *
  *   const e = DVFire.embers(canvas, { density: .5 });   // ambient sparks for a full-screen background
  *   e.setDensity(x); e.destroy();
@@ -131,7 +131,7 @@
       for (let k = M.min(pend, M.ceil(dt * 240)); k > 0; k--, pend--) spark(1); // vonkenfontein over ~0,25 s
       for (let j = 0, n = M.round(4 + 26 * M.min(I, 1.15)); j < NT; j++) {
         if (tLife[j] > 0) { if ((tAge[j] += dt) >= tLife[j]) j < n ? respawn(j) : (tLife[j] = 0); }
-        else if (j < n) { respawn(j); tAge[j] = R() * tLife[j] * .6; }
+        else if (j < n) { respawn(j); if (!warmed) tAge[j] = R() * tLife[j] * .6; } // nieuwe tongen groeien rustig aan
       }
       if (sparks) for (acc += dt * (.6 + 9 * I * I); acc > 1; acc--) spark(0);
       for (let k = 0; k < NS; k++) if (sL[k] > 0) {
@@ -141,7 +141,7 @@
         sX[k] += sVX[k] * dt; sY[k] += sVY[k] * dt;
       }
     }
-    function warm() { if (!warmed && S) { warmed = 1; for (let k = 0; k < 60; k++) step(1 / 30); } }
+    function warm() { if (!warmed && S) { for (let k = 0; k < 60; k++) step(1 / 30); warmed = 1; } }
 
     function size(w, h) {
       W = w; H = h; S = M.min(W * 1.05, H / 1.1); cx = W / 2; gy = H - S * .06; y0 = gy - S * .06;
@@ -178,7 +178,7 @@
         c.closePath();
         c.fillStyle = stops(c.createRadialGradient(r * .1, r * .15, 0, 0, 0, r * 1.15), `0@${heat(h + .12)} .6@${heat(h * .8)} 1@${heat(h * .35, .7)}`);
         c.fill(); c.lineWidth = r * .1; c.strokeStyle = "rgba(30,8,3,.55)"; c.stroke();
-        if (h < .25) { c.fillStyle = `rgba(120,108,98,${(.25 - h) * .7})`; c.fill(); } // as
+        if (h < .2) { c.fillStyle = `rgba(112,94,82,${(.2 - h) * .5})`; c.fill(); } // as
         c.restore();
       };
       // verkoold blok: krokodillenhuid van houtskoolblokjes, de naden ertussen gloeien (heter richting het vuur en aan de onderkant)

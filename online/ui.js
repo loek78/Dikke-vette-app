@@ -1402,7 +1402,7 @@
     const move = (i) => {
       const a = cells[i] && cells[i].firstChild;
       if (!a) return;
-      ring.style.transform = `translate(${a.offsetLeft + a.offsetWidth / 2}px, ${a.offsetTop + a.offsetHeight / 2}px)`;
+      ring.style.translate = `${a.offsetLeft + a.offsetWidth / 2}px ${a.offsetTop + a.offsetHeight / 2}px`;
       cells.forEach((c, j) => c.classList.toggle("lit", j === i));
     };
     requestAnimationFrame(() => {

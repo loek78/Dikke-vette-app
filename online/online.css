@@ -57,7 +57,7 @@
 
 /* ---------- Aurora + grain ---------- */
 /* z-index 0 + inhoud op 1: met z-index -1 zou de (dekkende) body-achtergrond de aurora afdekken */
-.ol > :not(.aurora) { position: relative; z-index: 1; }
+.screen.ol > :not(.aurora) { position: relative; z-index: 1; }
 .aurora {
   position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden;
   background: radial-gradient(130% 80% at 50% -10%, #1e0d3a 0%, #0d0618 55%, #070310 100%);
@@ -452,6 +452,7 @@
   background: linear-gradient(180deg, rgba(11, 4, 22, 0), rgba(11, 4, 22, 0.82) 36%, rgba(11, 4, 22, 0.96));
 }
 .o-dock > .o-btn-sm { align-self: center; }
+.o-dock .o-btn-glass { background: linear-gradient(180deg, rgba(58, 36, 92, 0.96), rgba(32, 18, 54, 0.96)); }
 .o-dock.is-row { flex-direction: row; align-items: stretch; }
 .o-dock.is-row > .o-btn-hero { flex: 1; min-width: 0; }
 .o-dock.is-row > .o-btn-sm { align-self: stretch; flex: none; width: 96px; min-height: 66px; border-radius: 22px; padding: 0 10px; line-height: 1.2; text-align: center; white-space: normal; }
@@ -832,19 +833,25 @@
 .o-drum.landed .o-drum-t { animation: o-pop 0.5s cubic-bezier(0.25, 1.8, 0.4, 1); }
 .o-drum-g { position: relative; display: flex; flex-wrap: wrap; justify-content: center; gap: 20px 12px; margin-top: 28px; max-width: 340px; }
 .o-drum-g.is-many { gap: 16px 8px; }
-.o-drum-c { width: 76px; display: flex; flex-direction: column; align-items: center; gap: 7px; transition: opacity 0.45s, transform 0.6s cubic-bezier(0.25, 1.5, 0.4, 1), filter 0.45s; }
+.o-drum-c { width: 76px; display: flex; flex-direction: column; align-items: center; gap: 7px; transform-origin: 50% 32px; transition: opacity 0.45s, transform 0.6s cubic-bezier(0.25, 1.5, 0.4, 1), filter 0.45s; }
 .o-drum-c .o-av { transition: transform 0.18s cubic-bezier(0.25, 1.8, 0.4, 1); }
 .o-drum-c.lit .o-av { transform: scale(1.13); }
 .o-drum-n { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 800; font-size: 13px; }
 .o-drum-ring {
   position: absolute; left: 0; top: 0; width: 88px; height: 88px; margin: -44px 0 0 -44px; border-radius: 50%; pointer-events: none;
-  border: 4px solid #fff; box-shadow: 0 0 22px #fff, 0 0 50px var(--acc2), inset 0 0 16px rgba(255, 255, 255, 0.55);
-  opacity: 0; transition: transform 0.16s cubic-bezier(0.3, 1.6, 0.5, 1), opacity 0.25s, scale 0.5s cubic-bezier(0.25, 1.6, 0.4, 1), border-color 0.3s;
+  border: 4px solid #fff;
+  /* positie via `translate` (JS), zodat `scale` bij het landen de verschuiving niet mee-schaalt */
+  opacity: 0; transition: translate 0.16s cubic-bezier(0.3, 1.6, 0.5, 1), opacity 0.25s, scale 0.5s cubic-bezier(0.25, 1.6, 0.4, 1), border-color 0.3s;
+}
+/* Holle gloed buiten de ring als verloop (een grote box-shadow-blur rendert hoekig tijdens het schalen) */
+.o-drum-ring::before {
+  content: ""; position: absolute; inset: -40px; z-index: -1; border-radius: 50%;
+  background: radial-gradient(closest-side, transparent 50%, rgba(255, 255, 255, 0.6) 53%, color-mix(in srgb, var(--acc2) 42%, transparent) 64%, transparent);
 }
 .o-drum-ring.on { opacity: 1; }
 .o-drum.landed .o-drum-c:not(.hit) { opacity: 0.18; transform: scale(0.82); filter: grayscale(1); }
 .o-drum.landed .o-drum-c.hit { transform: scale(1.3); }
-.o-drum.landed .o-drum-ring { scale: 1.42; border-color: var(--acc2); }
+.o-drum.landed .o-drum-ring { scale: 1.3; border-color: var(--acc2); }
 .o-drum.tied .o-drum-c.hit { transform: none; opacity: 1; filter: none; animation: o-shake 0.5s 2; }
 .o-drum-roll { display: flex; align-items: flex-end; gap: 4px; height: 26px; margin-top: 34px; }
 .o-drum-roll i { width: 5px; height: 100%; border-radius: 3px; background: linear-gradient(var(--acc2), var(--acc)); transform-origin: bottom; animation: o-eq 0.42s ease-in-out infinite alternate; }

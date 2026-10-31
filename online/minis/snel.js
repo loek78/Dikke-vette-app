@@ -169,7 +169,9 @@
   color:#2a0d02;background:linear-gradient(180deg,var(--flame,#ffc247),var(--ember,#ff6a1a));box-shadow:0 0 24px rgba(255,106,26,.8)}
 .sn-bang.early span{color:#0a1a2c;background:linear-gradient(180deg,#e6f4ff,#9fd3ff);box-shadow:0 0 24px rgba(90,169,255,.7)}
 .sn-bang.on{opacity:1;animation:sn-knal .32s cubic-bezier(.2,1.6,.4,1) both}
-.sn-bang.early b{color:#e6f4ff;font-size:clamp(46px,15vw,66px);text-shadow:0 0 26px rgba(120,190,255,.95),0 4px 0 #13304f}
+.sn-bang.early b{color:#e6f4ff;font-size:clamp(34px,11.5vw,62px);text-shadow:0 0 26px rgba(120,190,255,.95),0 4px 0 #13304f}
+.sn-bang.hit{animation:sn-out .42s ease-in forwards}
+@keyframes sn-out{0%{transform:scale(1);opacity:1}100%{transform:scale(1.15);opacity:0}}
 @keyframes sn-knal{0%{transform:scale(1.9);opacity:0}100%{transform:scale(1);opacity:1}}
 .sn-card{position:absolute;left:50%;bottom:max(16px,env(safe-area-inset-bottom));z-index:3;width:min(360px,calc(100% - 28px));
   transform:translate(-50%,18px);opacity:0;pointer-events:none;transition:opacity .3s,transform .4s cubic-bezier(.2,1.2,.4,1);
@@ -232,7 +234,7 @@
 .sn-wait i{width:10px;height:10px;border-radius:50%;background:var(--ember,#ff6a1a);box-shadow:0 0 12px var(--ember,#ff6a1a);animation:sn-dot 1s ease-in-out infinite}
 @keyframes sn-dot{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(.7);opacity:.6}}
 @media (max-height:640px){.sn-board{padding:9px 12px 11px}.sn-big{font-size:58px}.sn-howto{gap:9px}}
-@media (prefers-reduced-motion:reduce){.sn-wait i,.sn-msg .m1.wait{animation:none}.sn-bang.on{animation:none}}
+@media (prefers-reduced-motion:reduce){.sn-wait i,.sn-msg .m1.wait{animation:none}.sn-bang.on{animation:none}.sn-bang.hit{opacity:0}}
 `;
 
   function injectCss() {
@@ -250,7 +252,7 @@
     return e;
   };
   const TAU = Math.PI * 2;
-  const RANKS = [[3, "Sneller dan de vorst"], [2, "Snelle vingers"], [1, "Lauw"], [0, "Bevroren vingers"]];
+  const RANKS = [[3, "Vorstbreker"], [2, "Snelle vingers"], [1, "Lauwe handjes"], [0, "Bevroren vingers"]];
   const WAITS = ["Wacht op de knal…", "Stil… wacht op de knal…", "Nog niet… wacht op de knal…"];
 
   function mount(el, ctx) {
@@ -321,7 +323,16 @@
     const planks = Array.from({ length: 9 }, () => ({ w: 0.09 + drng() * 0.06, t: drng() }));
 
     // --- Layout ---
-    let W = 0, H = 0, dpr = 1, L = null, bg = null, frost = null, logImg = null, fcv = null, fg = null;
+    let W = 0, H = 0, dpr = 1, L = null, bg = null, frost = null, logImg = null, fcv = null, fg = null, vign = null;
+    // gloeiend kooltje als sprite (scheelt tientallen gradients per frame)
+    const coalImg = document.createElement("canvas");
+    coalImg.width = coalImg.height = 48;
+    (() => {
+      const x = coalImg.getContext("2d"), cg = x.createRadialGradient(24, 24, 0, 24, 24, 24);
+      cg.addColorStop(0, "rgba(255,214,120,1)"); cg.addColorStop(0.25, "rgba(255,150,50,.9)");
+      cg.addColorStop(0.55, "rgba(232,64,28,.5)"); cg.addColorStop(1, "rgba(120,20,5,0)");
+      x.fillStyle = cg; x.fillRect(0, 0, 48, 48);
+    })();
     const FS = 3; // schaal van het vlammendoek
     function layout() {
       const r = root.getBoundingClientRect();
@@ -340,7 +351,7 @@
       L.railY = wBot - L.wh * 0.2;
       msg.style.top = Math.round(bot + Math.min(64, H * 0.075)) + "px";
       bangEl.style.top = Math.round(wTop + L.wh * 0.5 - 56) + "px";
-      bg = renderBg(); frost = renderFrost(); logImg = renderLog();
+      bg = renderBg(); frost = renderFrost(); logImg = renderLog(); vign = renderVignette();
       // vlammen op lage resolutie tekenen en opgeschaald neerzetten = zachte, gloeiende randen
       const fx0 = L.cx - L.wht - 4, fy0 = L.wTop - 4, fw = L.wht * 2 + 8, fh = L.wh + L.sag * 2 + 8;
       fcv = document.createElement("canvas"); fcv.width = Math.ceil(fw / FS); fcv.height = Math.ceil(fh / FS);
@@ -463,6 +474,15 @@
       return o;
     }
 
+    // Donkere rand over alles (statisch).
+    function renderVignette() {
+      const [o, x] = off(W + 40, H + 40);
+      const vg = x.createRadialGradient(W / 2 + 20, H * 0.45 + 20, Math.min(W, H) * 0.4, W / 2 + 20, H * 0.45 + 20, Math.max(W, H) * 0.78);
+      vg.addColorStop(0, "rgba(4,3,2,0)"); vg.addColorStop(1, "rgba(4,3,2,.7)");
+      x.fillStyle = vg; x.fillRect(0, 0, W + 40, H + 40);
+      return o;
+    }
+
     // Het blok in de kachel: gekloofd hout (licht, aangestraald) met schorsrand en nerf.
     function renderLog() {
       const len = L.logLen, th = L.logTh;
@@ -488,11 +508,12 @@
         end.addColorStop(0, "rgba(18,9,4,.9)"); end.addColorStop(1, "rgba(18,9,4,0)");
         x.fillStyle = end; x.fillRect(Math.min(ex, ex + dir * th * 0.9), 0, th * 0.9, th);
       });
-      // blokjespatroon van houtskool (zoals in de echte kachel)
-      for (let k = 0; k < 26; k++) {
-        const u = nr() < 0.5 ? nr() * th * 0.9 : len - nr() * th * 0.9;
-        x.strokeStyle = "rgba(255,110,40," + (0.25 + nr() * 0.4) + ")"; x.lineWidth = 0.8;
-        x.strokeRect(u, nr() * th * 0.8, 3 + nr() * 4, 3 + nr() * 3);
+      // gloeiende barstjes in het houtskool aan de uiteinden
+      x.lineCap = "round";
+      for (let k = 0; k < 18; k++) {
+        const left = k % 2 === 0, u = left ? nr() * th * 0.7 : len - nr() * th * 0.7, v = th * (0.1 + nr() * 0.8);
+        x.strokeStyle = "rgba(255," + Math.round(90 + nr() * 60) + ",30," + (0.35 + nr() * 0.45) + ")"; x.lineWidth = 0.9 + nr() * 0.8;
+        x.beginPath(); x.moveTo(u, v); x.lineTo(u + (nr() - 0.5) * 7, v + (nr() - 0.5) * 3); x.lineTo(u + (nr() - 0.5) * 9, v + (nr() - 0.5) * 7); x.stroke();
       }
       return o;
     }
@@ -547,12 +568,11 @@
       coals.forEach((cl) => {
         const x0 = cx - whb + cl.u * whb * 2, y0 = wBot - wh * (0.02 + cl.v * 0.2) + L.sag;
         const gl = 0.35 + 0.35 * Math.sin(ts * cl.s + cl.p) + 0.3 * Math.min(1.4, k);
-        const r = cl.r * whb;
-        const cg = g.createRadialGradient(x0, y0, 0, x0, y0, r * 1.6);
-        cg.addColorStop(0, "rgba(255," + Math.round(120 + 90 * Math.min(1, gl)) + ",60," + Math.min(1, gl) + ")");
-        cg.addColorStop(0.5, "rgba(232,64,28," + Math.min(1, gl) * 0.6 + ")"); cg.addColorStop(1, "rgba(120,20,5,0)");
-        g.fillStyle = cg; g.beginPath(); g.arc(x0, y0, r * 1.6, 0, TAU); g.fill();
+        const r = cl.r * whb * 1.6;
+        g.globalAlpha = Math.max(0, Math.min(1, gl));
+        g.drawImage(coalImg, x0 - r, y0 - r, r * 2, r * 2);
       });
+      g.globalAlpha = 1;
       // voorste vlammetjes die over het blok likken (een paar blauwe voetjes zoals bij echt hout)
       for (let i = 0; i < 6; i++) {
         const tg = tongues[(i * 2) % tongues.length], x0 = cx - whb * 0.82 + (i / 5) * whb * 1.64, n = nz(ts * 1.2, tg.b, tg.a, tg.q, tg.p);
@@ -707,15 +727,12 @@
       // knalflits over het hele scherm
       if (flash > 0.01) {
         g.save(); g.globalCompositeOperation = "lighter";
-        const fg = g.createRadialGradient(L.cx, L.logC.y, 0, L.cx, L.logC.y, Math.max(W, H) * 0.85);
-        fg.addColorStop(0, "rgba(255,236,170," + Math.min(1, flash) * 0.85 + ")"); fg.addColorStop(0.45, "rgba(255,150,50," + Math.min(1, flash) * 0.35 + ")"); fg.addColorStop(1, "rgba(255,106,26,0)");
-        g.fillStyle = fg; g.fillRect(-20, -20, W + 40, H + 40);
+        const fl = g.createRadialGradient(L.cx, L.logC.y, 0, L.cx, L.logC.y, Math.max(W, H) * 0.85);
+        fl.addColorStop(0, "rgba(255,236,170," + Math.min(1, flash) * 0.85 + ")"); fl.addColorStop(0.45, "rgba(255,150,50," + Math.min(1, flash) * 0.35 + ")"); fl.addColorStop(1, "rgba(255,106,26,0)");
+        g.fillStyle = fl; g.fillRect(-20, -20, W + 40, H + 40);
         g.restore();
       }
-      // donkere rand
-      const vg = g.createRadialGradient(W / 2, H * 0.45, Math.min(W, H) * 0.4, W / 2, H * 0.45, Math.max(W, H) * 0.78);
-      vg.addColorStop(0, "rgba(4,3,2,0)"); vg.addColorStop(1, "rgba(4,3,2,.7)");
-      g.fillStyle = vg; g.fillRect(-20, -20, W + 40, H + 40);
+      g.drawImage(vign, -20, -20, W + 40, H + 40);
     }
 
     // --- Rondes ---
@@ -783,17 +800,28 @@
       const win = t !== null && t < V;
       if (t === null && tag === "slow") { cold = 0.8; frostBoost = 0.4; bangEl.className = "sn-bang on early"; bangB.textContent = "Bevroren!"; bangS.textContent = "TE LAAT"; beep(200, 0.2, "triangle", 0.05); }
       if (t !== null) {
-        bangEl.className = "sn-bang";
+        fadeBang(0);
         if (win) { flare = 0.6; beep(880, 0.08, "triangle", 0.08); beep(1320, 0.12, "triangle", 0.06, 0.07); }
         else { cold = 0.6; frostBoost = 0.3; beep(330, 0.12, "triangle", 0.05); }
       }
       showCard(t, tag, win);
       setMsg("", "");
+      if (t === null) fadeBang(1000);
       setPips();
       later(() => {
         if (round + 1 < ROUNDS) { round++; startRound(); }
         else finish();
       }, t === null ? 1900 : 2100);
+    }
+
+    // KNAL/Te vroeg wegblazen en daarna helemaal resetten (geen blijvende transform/overflow).
+    function fadeBang(delay) {
+      const at = round;
+      later(() => {
+        if (phase !== "show" || round !== at) return;
+        bangEl.classList.add("hit");
+        later(() => { if (round === at) bangEl.className = "sn-bang"; }, 450);
+      }, delay);
     }
 
     function barRow(cls, label, value, pct, fillCls) {
@@ -816,7 +844,7 @@
       else big.textContent = tag === "slow" ? "Bevroren" : "Te vroeg";
       top.appendChild(big);
       card.appendChild(top);
-      const vs = t === null ? (tag === "slow" ? "Te laat. De Vorst pakt de ronde." : "Te vroeg getikt. De Vorst pakt de ronde.")
+      const vs = t === null ? (tag === "slow" ? "Te laat. De Vorst pakt de ronde." : "Gegokt. De Vorst pakt de ronde.")
         : win ? (V - t >= 60 ? "Sneller dan de Vorst! Ruim." : "Sneller dan de Vorst!") : t - V <= 25 ? "Net te traag. Het scheelde een ijskristal." : "De Vorst was sneller.";
       card.appendChild(h("div", "sn-cvs", vs));
       card.appendChild(barRow("", "Jij", t === null ? "✕" : t + "", t === null ? 0 : scale(t), "me"));
