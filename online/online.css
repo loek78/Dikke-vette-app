@@ -32,6 +32,8 @@
   transition: --a1 1.4s ease, --a2 1.4s ease, --a3 1.4s ease, --a4 1.4s ease;
 }
 .ol [hidden] { display: none !important; }
+/* Unbounded zet "IJ" bij lang="nl" om in een ligatuur (JIJ leest als "JU") */
+.ol, .t-online { font-feature-settings: "locl" 0; }
 
 /* Fase-tinten: lobby violet/cyaan, reveal roze, hints cyaan, stemmen rood/oranje, uitslag groen of rood */
 .ol[data-screen="online"] { --a1: #8b5cff; --a2: #ff2e93; --a3: #22e6ff; --a4: #4b1fd6; }

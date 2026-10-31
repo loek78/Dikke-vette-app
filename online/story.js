@@ -190,7 +190,7 @@
         ]),
         choice("mist", "Er wordt weer geklopt. Wat doen jullie?", [
           opt("Gordijnen dicht. Niet kijken.", "Veilig. Saai, maar veilig.", { mist: "dicht" }),
-          opt("Heel even door het raam kijken.", "Wie kijkt, laat kou binnen. Maar weet daarna meer.", { mist: "gekeken" }, -1),
+          opt("Heel even door het raam kijken.", "Wie kijkt, laat kou binnen. Maar weet daarna meer.", { mist: "gekeken" }),
         ]),
         scene("spooky", [
           VT("Door het raam zie je een huisje in de mist. Precies dit huisje, met een kachel en een oud kleed."),
@@ -209,7 +209,8 @@
           meh: "Het duurde even, maar jullie zijn het echt. Denk ik. Ik ga ervan uit. Niet aankomen.",
           lose: "Jullie denken langs elkaar heen. De Mist glipt door het sleutelgat en likt aan mijn vlammen. Brr.",
         }),
-        fire(1, GL("Zie je dat? De Mist komt niet langs het kleed onder de deur! Ik heb dat kleed altijd gewaardeerd. Altijd."), is("kleed", "deur")),
+        fire(-1, VT("Onder de deur door kruipt een sliert mist naar binnen. Waar hij het vuur raakt, sist het."), { flag: "kleed", ne: "deur" }),
+        fire(-1, VT("Het gordijn is dicht, maar de kou van het raam hangt nog in de kamer. Gloei huivert."), is("mist", "gekeken")),
       ],
     },
     {
@@ -256,7 +257,6 @@
     {
       id: "wolf", time: "04:00", title: "Het uur van de wolf", tagline: "Verhalen zijn het beste brandhout.", burn: 2,
       steps: [
-        fire(-2, VO("Goedenacht. Ik kom een deel ophalen. Twee blokken, als het u schikt. Het schikt u."), is("aanbod", "ja")),
         scene("warm", [
           VT("Vier uur. Het uur van de wolf. Het uur waarop zelfs de klok even wil gaan zitten."),
           VT("{X} gaapt zo hard dat de spin in de houtmand ervan schrikt."),
@@ -282,6 +282,7 @@
           meh: "Mooi. Echt. Ik zat bijna te snotteren, maar vuur kan niet snotteren. Dan ga ik sissen.",
           lose: "Ik ben ingedut. Bij een verhaal. Ik, een vuur. Dat is nog nooit iemand gelukt.",
         }),
+        fire(-3, VO("Goedenacht. Ik kom mijn deel ophalen. Drie blokken, als het u schikt. Het schikt u."), is("aanbod", "ja")),
         scene("warm", [
           VT("Het vuur brandt laag en rustig. Niemand zegt iets, en dat is helemaal goed."),
           GL("Dit huisje heeft twaalf winters leeggestaan. Twaalf langste nachten zat ik hier, op één kooltje onder de as."),
@@ -295,7 +296,6 @@
     {
       id: "dageraad", time: "06:00", title: "Dageraad", tagline: "De langste nacht is bijna op.", burn: 2,
       steps: [
-        fire(-1, VO("Nog één ding. Het laatste blok. Dank u. Het was mij een genoegen."), is("aanbod", "ja")),
         scene("dawn", [
           VT("Zes uur. De langste nacht van het jaar is bijna op. Jullie ook."),
           VT("Boven de dennen wordt de lucht grijs, dan roze, dan een kleur waar nog geen naam voor is."),

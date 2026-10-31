@@ -38,14 +38,15 @@
       prof.split(" ").forEach((p, i) => { const [o, a] = p.split("@"); g.addColorStop(o, !i && hot ? "#fff7d7" : `rgba(${rgb},${a})`); });
       x.fillStyle = g; x.fillRect(0, 0, 64, 64); return c;
     };
-    // vlamtong: ronde voet → staart; tail = hoe snel hij versmalt, bend = kromming. Vorm zit in alpha.
-    const tongue = (r, g, b, tail, bend) => {
+    // vlamtong: ronde voet → staart; tail = hoe snel hij versmalt, bend = kromming. Vorm zit in alpha,
+    // kleur loopt van voet (a) naar punt (b): heet geel onderin, dieprood in de punten (kleurtemperatuur)
+    const tongue = (a, b, tail, bend) => {
       const w = 48, h = 128, c = mk(w, h), x = c.getContext("2d"), im = x.createImageData(w, h), d = im.data;
       for (let py = 0; py < h; py++) {
         const v = 1 - (py + .5) / h, hw = .92 * (v < .25 ? M.sqrt(1 - ((.25 - v) / .25) ** 2) : ((1 - v) / .75) ** tail);
-        const k = ss(0, .2, v) * (1 - v) ** .5, cc = bend * v * v;
+        const k = ss(0, .2, v) * (1 - v) ** .5, cc = bend * v * v, t = ss(.1, .95, v);
         for (let px = 0, i = py * w * 4; px < w; px++, i += 4) {
-          d[i] = r; d[i + 1] = g; d[i + 2] = b;
+          for (let ch = 0; ch < 3; ch++) d[i + ch] = a[ch] + (b[ch] - a[ch]) * t;
           d[i + 3] = 255 * k * (1 - ss(.25, 1, M.abs((px + .5) / w * 2 - 1 - cc) / (hw + 1e-3)));
         }
       }
@@ -53,8 +54,9 @@
     };
     const G = "0@1 .22@.6 .5@.18 1@0";
     return (SP = {
-      lick: tongue(255, 104, 26, 1.9, .45), hot: tongue(255, 176, 84, 1.5, .25), body: tongue(255, 66, 18, 1.1, 0), blue: tongue(84, 118, 255, .8, 0),
-      amb: glow("255,128,40", "0@1 .08@.8 .2@.48 .4@.2 .62@.07 .82@.02 1@0"), core: glow("255,150,50", G), ember: glow("255,78,18", G),
+      lick: tongue([255, 122, 30], [226, 52, 12], 1.9, .45), hot: tongue([255, 192, 104], [255, 116, 36], 1.5, .25),
+      body: tongue([255, 84, 22], [196, 34, 8], 1.1, 0), blue: tongue([80, 150, 255], [120, 60, 255], .9, .2),
+      core: glow("255,150,50", G), ember: glow("255,78,18", G),
       s: ["255,190,90", "255,122,30", "228,58,18"].map((c) => glow(c, "0@1 .18@.85 .5@.2 1@0", 1)),
     });
   }
@@ -102,8 +104,8 @@
     const sparks = o.embers !== false, blue = o.blueTips !== false, logs = o.logs !== false;
     const NT = 34, tAge = F32(NT), tLife = F32(NT), tX = F32(NT), tH = F32(NT), tW = F32(NT), tPh = F32(NT), tHot = F32(NT); // vlamtongen
     const NS = 96, sX = F32(NS), sY = F32(NS), sVX = F32(NS), sVY = F32(NS), sL = F32(NS), sM = F32(NS), sR = F32(NS); // vonken
-    const hot = F32(24); // gloeiende plekken in het bed
-    let W = 0, H = 0, S = 0, cx = 0, gy = 0, y0 = 0, q = 1, fbX = 0, fbY = 0, bedX = 0, bedY = 0, warmed = 0;
+    const hot = F32(24), bl = F32(42); // gloeiende plekken in het bed; plekjes voor blauwe vlammetjes (x, y, fase)
+    let W = 0, H = 0, S = 0, cx = 0, gy = 0, y0 = 0, q = 1, fbX = 0, fbY = 0, bedX = 0, bedY = 0, warmed = 0, ambG;
     let tgt = clamp(o.intensity == null ? .7 : +o.intensity || 0, 0, 1), cur = tgt, I = cur, flare = 0, time = 0, acc = 0;
 
     function respawn(j) {
@@ -144,61 +146,84 @@
       W = w; H = h; S = M.min(W * 1.05, H / 1.1); cx = W / 2; gy = H - S * .06; y0 = gy - S * .06;
       const bw = S * 1.1, top = M.max(0, y0 - S * 1.02);
       q = M.min(.5, 240 / bw); fb.width = M.ceil(bw * q); fb.height = M.ceil((y0 + S * .02 - top) * q); fbX = cx - bw / 2; fbY = top;
+      ambG = ctx.createRadialGradient(0, 0, 0, 0, 0, 1);
+      for (let i = 0; i <= 20; i++) { const r = i / 20; ambG.addColorStop(r, `rgba(255,128,40,${(M.exp(-6 * r * r) * (1 - r * r) ** 2).toFixed(4)})`); }
       buildBed(); sL.fill(0); warm();
     }
 
     function buildBed() { // gloeiend kolenbed + verkoolde blokken, één keer per formaat
-      let seed = 7;
+      let seed = 7, nb = 0;
       const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647; // zelfde vorm na elke resize
       const c = bc, bw = M.ceil(S * .9), bh = M.ceil(S * .3), ox = bw / 2, oy = bh - S * .05;
       bed.width = bw; bed.height = bh; bedX = cx - ox; bedY = gy - oy;
-      c.save(); c.translate(ox, oy - S * .025); c.scale(1, .2);
-      c.fillStyle = stops(c.createRadialGradient(0, 0, 0, 0, 0, S * .36), "0@#ff9a3a .35@#e8521a .7@#6a1a06 1@rgba(50,12,4,0)");
+      // hittekleur 0 (koud, as) → 1 (geeloranje kern), zoals echte houtskool
+      const HC = [[26, 15, 11], [74, 18, 6], [176, 44, 10], [240, 92, 26], [255, 178, 90]];
+      const heat = (h, k = 1) => {
+        const t = clamp(h, 0, 1) * 4, i = M.min(3, t | 0), f = t - i, A = HC[i], B = HC[i + 1];
+        return `rgb(${(A[0] + (B[0] - A[0]) * f) * k | 0},${(A[1] + (B[1] - A[1]) * f) * k | 0},${(A[2] + (B[2] - A[2]) * f) * k | 0})`;
+      };
+      c.save(); c.translate(ox, oy - S * .025); c.scale(1, .2); // gloed onder alles: wordt zichtbaar in de naden
+      c.fillStyle = stops(c.createRadialGradient(0, 0, 0, 0, 0, S * .38), "0@#ff9a3a .3@#e8521a .65@#7a1e06 1@rgba(50,12,4,0)");
       c.fillRect(-S * .4, -S * .4, S * .8, S * .8); c.restore();
       const co = [];
-      for (let k = 0; k < 150; k++) {
+      for (let k = 0; k < 130; k++) {
         const u = rnd() * 2 - 1, y = rnd();
-        co.push([ox + u * S * .29, oy - y * (1 - u * u) ** .5 * S * .07, S * (.013 + .016 * rnd()) * (1 - .35 * u * u), rnd() < .22 + .5 * (1 - M.abs(u)) * y]);
+        co.push([ox + u * S * .3, oy - y * (1 - u * u) ** .5 * S * .07, S * (.014 + .017 * rnd()) * (1 - .35 * u * u), (1 - M.abs(u)) ** 1.3 * (.35 + .65 * y) * (.55 + .7 * rnd())]);
       }
       co.sort((a, b) => a[1] - b[1]);
-      const coal = ([x, y, r, h]) => {
-        c.save(); c.translate(x, y); c.scale(1, .72); c.beginPath();
-        for (let i = 0, a0 = rnd() * TAU; i < 6; i++) { const a = a0 + i / 6 * TAU, rr = r * (.7 + .4 * rnd()); c.lineTo(M.cos(a) * rr, M.sin(a) * rr); }
-        c.fillStyle = stops(c.createRadialGradient(0, -r * .25, 0, 0, 0, r * 1.1), h ? "0@#ffc46a .35@#f2621c .75@#9a2408 1@#2a0a04" : "0@#3a2212 .6@#160b06 1@#070302");
-        c.fill(); c.restore();
+      const coal = ([x, y, r, h]) => { // brok houtskool: gloeit van binnen, donkere korst/naad rondom, koude brokken grijs van de as
+        c.save(); c.translate(x, y); c.scale(1, .7); c.beginPath();
+        for (let i = 0, a0 = rnd() * TAU; i < 7; i++) { const a = a0 + i / 7 * TAU, rr = r * (.72 + .4 * rnd()); c.lineTo(M.cos(a) * rr, M.sin(a) * rr); }
+        c.closePath();
+        c.fillStyle = stops(c.createRadialGradient(r * .1, r * .15, 0, 0, 0, r * 1.15), `0@${heat(h + .12)} .6@${heat(h * .8)} 1@${heat(h * .35, .7)}`);
+        c.fill(); c.lineWidth = r * .16; c.strokeStyle = "rgba(22,6,2,.8)"; c.stroke();
+        if (h < .3) { c.fillStyle = `rgba(150,138,128,${(.3 - h) * .9})`; c.fill(); } // as
+        c.restore();
       };
-      // verkoold blok: donker en rond belicht, met een net van gloeiende scheurtjes dat heter wordt richting het vuur
+      // verkoold blok: krokodillenhuid van houtskoolblokjes, de naden ertussen gloeien (heter richting het vuur en aan de onderkant)
       const log = (x, y, dir, ang, L, T) => {
         const at = () => { c.save(); c.translate(x, y); c.scale(dir, 1); c.rotate(ang); };
         const row = (r) => -M.cos(r * M.PI / 4) * T / 2; // rijen dichter bij elkaar aan de randen: het blok is rond
+        const top = [];
         at(); c.beginPath(); c.moveTo(0, T / 2);
-        for (let i = 0; i <= 10; i++) c.lineTo(L * i / 10, -T / 2 + T * .06 * (rnd() - .5));
-        c.ellipse(L, 0, T * .25, T / 2, 0, -M.PI / 2, M.PI / 2); c.closePath();
-        c.fillStyle = stops(c.createLinearGradient(0, -T / 2, 0, T / 2), "0@#4e2c16 .2@#26140a .65@#100804 1@#040201"); c.fill(); c.clip();
-        c.fillStyle = stops(c.createLinearGradient(0, 0, L, 0), ".6@rgba(200,40,8,0) 1@rgba(220,60,12,.35)"); c.fillRect(0, -T, L * 1.3, T * 2);
-        c.strokeStyle = stops(c.createLinearGradient(0, 0, L, 0), "0@rgba(255,90,20,0) .3@rgba(160,36,8,.35) .7@rgba(255,110,30,.9) 1@#ffc878");
-        c.lineWidth = T * .032; c.lineJoin = c.lineCap = "round"; c.shadowColor = "rgba(255,80,16,.9)"; c.shadowBlur = T * .14;
-        for (let r = 1; r < 4; r++) { // lengtescheuren met de nerf mee, elk stuk zijn eigen gloed
-          c.beginPath();
-          for (let u = 0; u < L + T; u += T * .16) {
-            const yy = row(r) + (rnd() - .5) * T * .09;
-            if (rnd() < .22) { c.globalAlpha = .3 + .7 * rnd(); c.stroke(); c.beginPath(); c.moveTo(u, yy); } else c.lineTo(u, yy);
+        for (let i = 0; i <= 10; i++) { const yy = -T / 2 + T * .07 * (rnd() - .5); top.push(yy); c.lineTo(L * i / 10, yy); }
+        c.ellipse(L, 0, T * .3, T / 2, 0, -M.PI / 2, M.PI / 2); c.closePath();
+        const seam = c.createLinearGradient(0, 0, L + T * .3, 0);
+        c.fillStyle = stops(seam, `0@#1a0603 .35@#5a1404 .7@#c2380a .9@#ff7a22 1@#ffb056`); c.fill(); c.clip();
+        for (let r = 0; r < 4; r++) { // blokjes per rij, verspringend als metselwerk; tussenruimte = gloeiende naad
+          const y1 = row(r), y2 = row(r + 1), g = T * (.03 + .02 * (r === 1 || r === 2)), lit = r < 2;
+          for (let u = -rnd() * T * .3; u < L + T * .3;) {
+            const len = T * (.24 + .3 * rnd()) * (r === 0 || r === 3 ? 1.5 : 1), h = ss(.45, 1.05, (u + len / 2) / L) * (.45 + .55 * rnd()) + (r === 3) * .12;
+            const j = () => (rnd() - .5) * g * 1.2;
+            c.beginPath(); c.moveTo(u + g + j(), y1 + g); c.lineTo(u + len - g + j(), y1 + g + j() * .5);
+            c.lineTo(u + len - g + j(), y2 - g); c.lineTo(u + g + j(), y2 - g + j() * .5); c.closePath();
+            const cool = heat(h * .55, 1), warm = lit ? `rgb(${66 + 40 * h | 0},${38 + 12 * h | 0},${24}` + ")" : "#120a06";
+            c.fillStyle = stops(c.createLinearGradient(0, y1, 0, y2), `0@${h > .5 ? cool : warm} 1@${h > .5 ? heat(h * .4, .8) : "#0c0604"}`);
+            c.fill();
+            if (lit && rnd() < .35) { c.fillStyle = "rgba(190,176,160,.16)"; c.fillRect(u + len * .3, y1 + g * 1.5, len * .35, (y2 - y1) * .25); } // witte as bovenop
+            u += len;
           }
-          c.stroke();
         }
-        for (let i = 0; i < L / T * 3.5; i++) { // schuine dwarsscheurtjes
-          const u = rnd() * (L + T * .3), r = rnd() * 4 | 0, d = (rnd() - .5) * T * .45;
-          c.globalAlpha = .3 + .7 * rnd(); c.beginPath(); c.moveTo(u, row(r));
-          c.quadraticCurveTo(u + d / 2 + (rnd() - .5) * T * .2, (row(r) + row(r + 1)) / 2, u + d, row(r + 1)); c.stroke();
+        // rondheid: bovenkant aangelicht door de vlammen, onderkant in de schaduw
+        c.fillStyle = stops(c.createLinearGradient(0, -T / 2, 0, T / 2), "0@rgba(255,170,90,.22) .25@rgba(255,140,60,.05) .55@rgba(0,0,0,0) 1@rgba(0,0,0,.5)");
+        c.fillRect(-T, -T, L + T * 2, T * 2);
+        c.restore(); at(); c.scale(.3, 1); // gezaagde kop: licht hout met jaarringen en een verkoolde rand
+        c.beginPath(); for (let i = 0; i < 9; i++) { const a = i / 9 * TAU, rr = T / 2 * (.9 + .12 * rnd()); c.lineTo(M.cos(a) * rr, M.sin(a) * rr); } c.closePath();
+        c.fillStyle = stops(c.createRadialGradient(-T * .08, -T * .1, 0, 0, 0, T / 2), "0@#7a5232 .5@#5a3a22 .82@#3a2414 1@#120905"); c.fill();
+        c.lineWidth = T * .07; c.strokeStyle = "#140a05"; c.stroke(); c.lineWidth = T * .02; c.strokeStyle = "rgba(30,16,8,.45)";
+        for (let i = 1; i < 4; i++) { c.beginPath(); c.arc(-T * .04, 0, T / 2 * i / 4.2, 0, TAU); c.stroke(); }
+        c.restore();
+        // plekken waar houtgas blauw opbrandt: op de bovenrand, aan de hete kant
+        for (let i = 0; i < 4; i++) {
+          const u = L * (.55 + .4 * i / 3 + .05 * rnd()), v = top[M.min(10, M.round(u / L * 10))], ca = M.cos(ang), sa = M.sin(ang);
+          bl[nb++] = (bedX + x + dir * (u * ca - v * sa)) | 0; bl[nb++] = bedY + y + u * sa + v * ca; bl[nb++] = rnd() * 99;
         }
-        c.restore(); at(); c.scale(.28, 1); // gezaagde kop
-        c.fillStyle = stops(c.createRadialGradient(-T * .1, -T * .1, 0, 0, 0, T / 2), "0@#4a2c17 .55@#33200f .85@#1e1008 1@#0b0503");
-        c.beginPath(); c.arc(0, 0, T / 2, 0, TAU); c.fill(); c.restore();
       };
       let k = 0;
       for (; k < co.length && co[k][1] < oy - S * .035; k++) coal(co[k]); // achterste kooltjes, dan blokken, dan de voorste
-      if (logs) { log(ox - S * .32, oy - S * .006, 1, -.27, S * .5, S * .08); log(ox + S * .32, oy, -1, -.25, S * .49, S * .076); }
+      if (logs) { log(ox - S * .32, oy - S * .006, 1, -.27, S * .5, S * .085); log(ox + S * .32, oy, -1, -.25, S * .49, S * .08); }
       for (; k < co.length; k++) coal(co[k]);
+      while (nb < bl.length) { const u = bell(); bl[nb++] = cx + u * S * .2; bl[nb++] = gy - S * (.035 + .025 * rnd()) * (1 - u * u); bl[nb++] = rnd() * 99; }
       for (let i = 0; i < 24; i += 2) { hot[i] = cx + bell() * S * .26; hot[i + 1] = gy - S * (.01 + .06 * rnd()); }
     }
 
@@ -208,7 +233,9 @@
       const fl = .8 + .4 * vn(time * 6.1) * vn(time * 2.3 + 40), FH = S * M.min(.98, .1 + .85 * Ic), hw = S * (.06 + .19 * Ic), tw = S * (.1 + .13 * Ic);
       reset(c, W, H); c.globalCompositeOperation = "lighter";
       const gcy = y0 - FH * .35, rx = M.min(W / 2, S * 1.2), ry = M.min(gcy, H - gcy, S);
-      c.globalAlpha = (.2 + .42 * Ic) * fl; c.drawImage(sp.amb, cx - rx, gcy - ry, rx * 2, ry * 2); // warm licht rondom
+      // warm licht rondom: echte gradient (geen opgeschaalde sprite → geen trapjes/ringen in het donker)
+      c.globalAlpha = M.min(1, (.2 + .42 * Ic + .3 * flare) * fl); c.setTransform(rx, 0, 0, ry, cx, gcy); c.fillStyle = ambG; c.fillRect(-1, -1, 2, 2);
+      c.setTransform(1, 0, 0, 1, 0, 0);
       // vlammen in een buffer op lage resolutie: rood omhulsel + gele kern, dan losse tongen (additief → wit-geel hart)
       reset(f, fw, fh); f.globalCompositeOperation = "lighter";
       for (let e = 0; e < 3; e++) {
@@ -245,12 +272,11 @@
         c.drawImage(sp.ember, hot[k] - r, hot[k + 1] - r * .5, r * 2, r);
       }
       c.globalAlpha = (.1 + .38 * Ic) * fl; c.drawImage(sp.core, cx - S * .3, y0 - S * .09, S * .6, S * .15);
-      if (blue) for (let j = 0; j < NT; j += 2) { // blauwe vlammetjes aan de voet
-        if (tLife[j] <= 0 || M.abs(tX[j]) > .8) continue;
-        const a = tAge[j] / tLife[j], al = ss(0, .25, a) * (1 - ss(.45, .85, a)) * (.22 + .3 * vn(time * 6 + j)) * (1.3 - .5 * Ic);
+      if (blue) for (let k = 0; k < bl.length; k += 3) { // blauwe vlammetjes: houtgas dat op de blokken en kolen opbrandt
+        const ph = bl[k + 2], al = ss(.36, .68, vn(time * .8 + ph)) * (.5 + .5 * vn(time * 7 + ph)) * (1.15 - .4 * Ic);
         if (al < .02) continue;
-        const xx = tX[j] * M.max(hw * 1.1, S * .2), h = S * (.028 + .035 * vn(time * 5 + tPh[j])), w = S * (.03 + .014 * M.abs(tW[j]));
-        c.globalAlpha = al; c.setTransform(w / 48, 0, (vn(time * 3 + j) - .5) * .5 * h / 128, h / 128, cx + xx, y0 + S * .03 + xx * xx / S * .5);
+        const h = S * (.026 + .04 * vn(time * 4.3 + ph * 2)) * (.75 + .45 * Ic), w = S * (.024 + .01 * vn(ph));
+        c.globalAlpha = al; c.setTransform(w / 48, 0, (vn(time * 2.7 + ph) - .5) * .9 * h / 128, h / 128, bl[k], bl[k + 1]);
         c.drawImage(sp.blue, -24, -128);
       }
       for (let k = 0; k < NS; k++) { // vonken, uitgerekt langs hun snelheid
