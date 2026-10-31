@@ -1172,5 +1172,8 @@
   api.ANIMS = ["idle", "run", "jump", "fall", "slide", "stumble", "fly", "happy"];
   api.SPRITE_NAMES = Object.keys(SPRITES);
   api.hash = hash;
+  // live, pulsing lights for a pre-rendered (static) pine: game.js blits cached trees and adds these on top
+  api.treeLights = treeLights;
+  api.TREE_LIGHTS = { tree1: [3, 70, 120], tree2: [4, 90, 160], tree3: [5, 80, 200] }; // tiers, w, h per pine sprite
   return api;
 });
